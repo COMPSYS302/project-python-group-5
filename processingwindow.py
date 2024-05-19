@@ -1,14 +1,15 @@
-# processingwindow.py
 import csv
 from PyQt5.QtCore import QThread, pyqtSignal
 import numpy as np
 from PyQt5.QtGui import QImage, QColor
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QProgressBar, QLabel, QMessageBox
+import time
 
 class ProcessingThread(QThread):
     progress = pyqtSignal(int)
+    timeLeft = pyqtSignal(str)  # Signal for estimated time left
     dataLoaded = pyqtSignal(list)
-    errorOccurred = pyqtSignal(str)  # Signal to report errors
+    errorOccurred = pyqtSignal(str)
 
     def __init__(self, filePath):
         super().__init__()
@@ -16,6 +17,7 @@ class ProcessingThread(QThread):
 
     def run(self):
         try:
+            start_time = time.time()
             images = []
             with open(self.filePath, 'r', newline='') as csvfile:
                 reader = csv.reader(csvfile)
@@ -42,8 +44,16 @@ class ProcessingThread(QThread):
                             color = QColor(gray, gray, gray)
                             image.setPixelColor(x, y, color)
                     images.append(image)
+                    elapsed_time = time.time() - start_time
                     progress_percent = int((index + 1) / total_lines * 100)
                     self.progress.emit(progress_percent)
+
+                    # Time estimation
+                    if elapsed_time > 0:
+                        estimated_total_time = elapsed_time / ((index + 1) / total_lines)
+                        estimated_time_left = estimated_total_time - elapsed_time
+                        self.timeLeft.emit(f"{int(estimated_time_left // 60)}m {int(estimated_time_left % 60)}s")
+
                     if self.isInterruptionRequested():
                         return
             self.dataLoaded.emit(images)
@@ -57,6 +67,7 @@ class ProcessingWindow(QMainWindow):
         self.initUI()
         self.thread = ProcessingThread(filePath)
         self.thread.progress.connect(self.updateProgressBar)
+        self.thread.timeLeft.connect(self.updateTimeLabel)  # Connect to update time label
         self.thread.dataLoaded.connect(self.finishedProcessing)
         self.thread.errorOccurred.connect(self.handleError)
         self.thread.start()
@@ -69,16 +80,21 @@ class ProcessingWindow(QMainWindow):
         self.setCentralWidget(widget)
         layout = QVBoxLayout(widget)
 
+        self.progressBar = QProgressBar()
+        layout.addWidget(self.progressBar)
+
+        self.timeLabel = QLabel("Estimated Time Left: Calculating...")
+        layout.addWidget(self.timeLabel)
+
         self.stopButton = QPushButton("Stop")
         self.stopButton.clicked.connect(self.stopProcessing)
         layout.addWidget(self.stopButton)
 
-        self.progressBar = QProgressBar(self)
-        self.progressBar.setMaximum(100)
-        layout.addWidget(self.progressBar)
-
     def updateProgressBar(self, value):
         self.progressBar.setValue(value)
+
+    def updateTimeLabel(self, time_left):
+        self.timeLabel.setText(f"Estimated Time Left: {time_left}")
 
     def stopProcessing(self):
         self.thread.requestInterruption()
@@ -91,3 +107,4 @@ class ProcessingWindow(QMainWindow):
 
     def finishedProcessing(self, images):
         self.close()  # Optionally update window or close after processing
+
