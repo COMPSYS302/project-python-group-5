@@ -7,7 +7,8 @@ class MainWindow(QMainWindow):
 
     def initUI(self):
         self.setWindowTitle("My App")
-        self.setGeometry(100, 100, 728, 592)  # Size adjusted to mimic your screenshot
+        self.setGeometry(100, 100, 728, 592)
+        self.setWindowIcon
 
 
         # Create Menu
@@ -40,10 +41,6 @@ class MainWindow(QMainWindow):
         searchBar.setPlaceholderText("Search...")
         layout.addWidget(searchBar)
 
-        # Placeholder for image area
-        imageArea = QLabel("Image Area")
-        imageArea.setWordWrap(True)
-        layout.addWidget(imageArea)
 
         # Set layout to the main widget
         mainWidget.setLayout(layout)
