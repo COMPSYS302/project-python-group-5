@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
 
         # Disabled Train Data action
         trainDataAction = QAction("Train Data", self)
-        trainDataAction.setEnabled(False)
+        trainDataAction.setEnabled(True)
         fileMenu.addAction(trainDataAction)
 
         # View menu
