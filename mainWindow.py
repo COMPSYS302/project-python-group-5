@@ -1,15 +1,34 @@
-# mainwindow.py
-from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollArea, QVBoxLayout, QWidget, QApplication, QMessageBox, QGridLayout
+from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollArea, QVBoxLayout, QWidget, QApplication, QMessageBox, QGridLayout, QProgressBar
 from PyQt5.QtGui import QPixmap
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
 
+class ImageLoaderThread(QtCore.QThread):
+    update_pixmap = QtCore.pyqtSignal(object, int, int)
+    progress_updated = QtCore.pyqtSignal(int)
+
+    def __init__(self, images, thumbnail_size):
+        super().__init__()
+        self.images = images
+        self.thumbnail_size = thumbnail_size
+
+    def run(self):
+        total = len(self.images)
+        for i, img in enumerate(self.images):
+            pixmap = QPixmap.fromImage(img)
+            pixmap = pixmap.scaled(self.thumbnail_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            col = i % 6
+            row = i // 6
+            self.update_pixmap.emit(pixmap, row, col)
+            self.progress_updated.emit((i + 1) * 100 // total)
+            self.msleep(10)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.initUI()
         self.images = []
-        self.searchBarWidget = None
+        self.initUI()
 
     def initUI(self):
         self.setWindowTitle("Image Viewer App")
@@ -17,18 +36,36 @@ class MainWindow(QMainWindow):
         self.menu = self.menuBar()
         self.setupMenus()
 
+        layout = QVBoxLayout()
+        self.searchBarWidget = SearchBar(self)  # Assuming SearchBar is properly implemented
+        layout.addWidget(self.searchBarWidget)
+
+        self.scroll = QScrollArea(self)
+        self.container = QWidget()
+        self.grid = QGridLayout(self.container)
+        self.container.setLayout(self.grid)
+        self.scroll.setWidget(self.container)
+        self.scroll.setWidgetResizable(True)
+        layout.addWidget(self.scroll)
+
+        # Progress Bar
+        self.progressBar = QProgressBar(self)
+        layout.addWidget(self.progressBar)
+
+        centralWidget = QWidget(self)
+        centralWidget.setLayout(layout)
+        self.setCentralWidget(centralWidget)
+
     def setupMenus(self):
         # File menu
         fileMenu = self.menu.addMenu("File")
-
-        # Load Data action
         loadAction = QAction("Load Data", self)
         loadAction.triggered.connect(self.openFileDialog)
         fileMenu.addAction(loadAction)
 
-        # Train Data action - No method connected
+        # Disabled Train Data action
         trainDataAction = QAction("Train Data", self)
-        trainDataAction.setEnabled(False)  # Makes the action disabled, i.e., it appears but cannot be clicked
+        trainDataAction.setEnabled(False)
         fileMenu.addAction(trainDataAction)
 
         # View menu
@@ -36,7 +73,6 @@ class MainWindow(QMainWindow):
         viewAction = QAction("View", self)
         viewAction.triggered.connect(self.displayImages)
         viewMenu.addAction(viewAction)
-
 
     def openFileDialog(self):
         fileName, _ = QFileDialog.getOpenFileName(self, "Open CSV file", "", "CSV Files (*.csv)")
@@ -48,43 +84,29 @@ class MainWindow(QMainWindow):
 
     def storeImages(self, images):
         self.images = images
-        self.processWindow = None  # Ensure to clean up
+        self.processWindow = None  # Clean up
 
     def displayImages(self):
         if not self.images:
             QMessageBox.information(self, "Error", "No images to display.")
             return
+        self.loader_thread = ImageLoaderThread(self.images, QtCore.QSize(75, 75))
+        self.loader_thread.update_pixmap.connect(self.addImageToGrid, QtCore.Qt.QueuedConnection)
+        self.loader_thread.progress_updated.connect(self.updateProgressBar)
+        self.loader_thread.start()
 
-        if not self.searchBarWidget:
-            self.searchBarWidget = SearchBar(self)
-            self.setCentralWidget(self.searchBarWidget)
+    def addImageToGrid(self, pixmap, row, col):
+        label = QLabel()
+        label.setPixmap(pixmap)
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        self.grid.addWidget(label, row, col)
 
-        # Set up a scrollable area with a grid layout for images
-        scroll = QScrollArea(self.searchBarWidget)
-        container = QWidget()
-        grid = QGridLayout(container)
-        grid.setSpacing(10)
-
-        row = 0
-        col = 0
-        for index, img in enumerate(self.images):
-            label = QLabel()
-            pixmap = QPixmap.fromImage(img)
-            label.setPixmap(pixmap)
-            grid.addWidget(label, row, col)
-            col += 1
-            if col == 6:
-                col = 0
-                row += 1
-
-        container.setLayout(grid)
-        scroll.setWidget(container)
-        scroll.setWidgetResizable(True)
-        self.searchBarWidget.layout.addWidget(scroll)
+    def updateProgressBar(self, value):
+        self.progressBar.setValue(value)
 
     def handleError(self, error_message):
         QMessageBox.critical(self, "Error", error_message)
-        self.processWindow = None  # Clean up after error
+        self.processWindow = None
 
 def main():
     app = QApplication([])
