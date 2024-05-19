@@ -41,6 +41,10 @@ class MainWindow(QMainWindow):
         searchBar.setPlaceholderText("Search...")
         layout.addWidget(searchBar)
 
+        # Placeholder for image area
+        imageArea = QLabel("Image Area")
+        imageArea.setWordWrap(True)
+        layout.addWidget(imageArea)
 
         # Set layout to the main widget
         mainWidget.setLayout(layout)
