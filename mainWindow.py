@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollAr
 from PyQt5.QtGui import QPixmap
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
+from Train import Train
 
 class ImageLoaderThread(QtCore.QThread):
     update_pixmap = QtCore.pyqtSignal(object, int, int)
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.images = []
         self.unique_images = []
+        self.csv_file = ""
         self.initUI()
 
     def initUI(self):
@@ -44,9 +46,9 @@ class MainWindow(QMainWindow):
         loadAction.triggered.connect(self.openFileDialog)
         fileMenu.addAction(loadAction)
 
-        # Disabled Train Data action
+        # Train Data action
         trainDataAction = QAction("Train Data", self)
-        trainDataAction.setEnabled(True)
+        trainDataAction.triggered.connect(self.openTrainPage)
         fileMenu.addAction(trainDataAction)
 
         # View menu
@@ -58,6 +60,7 @@ class MainWindow(QMainWindow):
     def openFileDialog(self):
         fileName, _ = QFileDialog.getOpenFileName(self, "Open CSV file", "", "CSV Files (*.csv)")
         if fileName:
+            self.csv_file = fileName
             self.processWindow = ProcessingWindow(fileName, self)
             self.processWindow.thread.dataLoaded.connect(self.storeImages)
             self.processWindow.thread.errorOccurred.connect(self.handleError)
@@ -111,6 +114,13 @@ class MainWindow(QMainWindow):
     def handleError(self, error_message):
         QMessageBox.critical(self, "Error", error_message)
         self.processWindow = None
+
+    def openTrainPage(self):
+        if self.csv_file:
+            self.trainPage = Train(self.csv_file)
+            self.trainPage.show()
+        else:
+            QMessageBox.information(self, "Error", "No CSV file loaded. Please load a CSV file first.")
 
 def main():
     app = QApplication([])
