@@ -28,6 +28,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.images = []
+        self.unique_images = []
         self.initUI()
 
     def initUI(self):
@@ -35,26 +36,6 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
         self.menu = self.menuBar()
         self.setupMenus()
-
-        layout = QVBoxLayout()
-        self.searchBarWidget = SearchBar(self)  # Assuming SearchBar is properly implemented
-        layout.addWidget(self.searchBarWidget)
-
-        self.scroll = QScrollArea(self)
-        self.container = QWidget()
-        self.grid = QGridLayout(self.container)
-        self.container.setLayout(self.grid)
-        self.scroll.setWidget(self.container)
-        self.scroll.setWidgetResizable(True)
-        layout.addWidget(self.scroll)
-
-        # Progress Bar
-        self.progressBar = QProgressBar(self)
-        layout.addWidget(self.progressBar)
-
-        centralWidget = QWidget(self)
-        centralWidget.setLayout(layout)
-        self.setCentralWidget(centralWidget)
 
     def setupMenus(self):
         # File menu
@@ -82,15 +63,38 @@ class MainWindow(QMainWindow):
             self.processWindow.thread.errorOccurred.connect(self.handleError)
             self.processWindow.show()
 
-    def storeImages(self, images):
-        self.images = images
+    def storeImages(self, all_images, unique_images):
+        self.images = all_images
+        self.unique_images = unique_images
         self.processWindow = None  # Clean up
 
     def displayImages(self):
-        if not self.images:
-            QMessageBox.information(self, "Error", "No images to display.")
+        if not self.unique_images:
+            QMessageBox.information(self, "Error", "No unique images to display.")
             return
-        self.loader_thread = ImageLoaderThread(self.images, QtCore.QSize(75, 75))
+
+        layout = QVBoxLayout()
+
+        self.searchBarWidget = SearchBar(self)  # Assuming SearchBar is properly implemented
+        layout.addWidget(self.searchBarWidget)
+
+        self.scroll = QScrollArea(self)
+        self.container = QWidget()
+        self.grid = QGridLayout(self.container)
+        self.container.setLayout(self.grid)
+        self.scroll.setWidget(self.container)
+        self.scroll.setWidgetResizable(True)
+        layout.addWidget(self.scroll)
+
+        # Progress Bar
+        self.progressBar = QProgressBar(self)
+        layout.addWidget(self.progressBar)
+
+        centralWidget = QWidget(self)
+        centralWidget.setLayout(layout)
+        self.setCentralWidget(centralWidget)
+
+        self.loader_thread = ImageLoaderThread(self.unique_images, QtCore.QSize(75, 75))
         self.loader_thread.update_pixmap.connect(self.addImageToGrid, QtCore.Qt.QueuedConnection)
         self.loader_thread.progress_updated.connect(self.updateProgressBar)
         self.loader_thread.start()

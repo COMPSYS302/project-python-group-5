@@ -5,10 +5,11 @@ from PyQt5.QtGui import QImage, QColor
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QProgressBar, QLabel, QMessageBox
 import time
 
+
 class ProcessingThread(QThread):
     progress = pyqtSignal(int)
     timeLeft = pyqtSignal(str)  # Signal for estimated time left
-    dataLoaded = pyqtSignal(list)
+    dataLoaded = pyqtSignal(list, list)  # Emit both all images and unique images
     errorOccurred = pyqtSignal(str)
 
     def __init__(self, filePath):
@@ -18,7 +19,10 @@ class ProcessingThread(QThread):
     def run(self):
         try:
             start_time = time.time()
-            images = []
+            all_images = []
+            unique_images = []
+            unique_pixel_data = set()
+
             with open(self.filePath, 'r', newline='') as csvfile:
                 reader = csv.reader(csvfile)
                 rows = list(reader)
@@ -43,7 +47,15 @@ class ProcessingThread(QThread):
                             gray = pixel_data[y][x]
                             color = QColor(gray, gray, gray)
                             image.setPixelColor(x, y, color)
-                    images.append(image)
+
+                    all_images.append(image)
+
+                    # Check for uniqueness
+                    pixel_data_tuple = tuple(pixel_data.flatten())
+                    if pixel_data_tuple not in unique_pixel_data:
+                        unique_pixel_data.add(pixel_data_tuple)
+                        unique_images.append(image)
+
                     elapsed_time = time.time() - start_time
                     progress_percent = int((index + 1) / total_lines * 100)
                     self.progress.emit(progress_percent)
@@ -56,9 +68,11 @@ class ProcessingThread(QThread):
 
                     if self.isInterruptionRequested():
                         return
-            self.dataLoaded.emit(images)
+
+            self.dataLoaded.emit(all_images, unique_images)
         except Exception as e:
             self.errorOccurred.emit(str(e))
+
 
 class ProcessingWindow(QMainWindow):
     def __init__(self, filePath, parent=None):
@@ -105,6 +119,7 @@ class ProcessingWindow(QMainWindow):
         QMessageBox.critical(self, "Error Processing CSV", error_message)
         self.close()
 
-    def finishedProcessing(self, images):
+    def finishedProcessing(self, all_images, unique_images):
+        # You can handle the lists of all images and unique images here
+        # For example, storing them in the main window or displaying a message
         self.close()  # Optionally update window or close after processing
-
