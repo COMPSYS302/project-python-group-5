@@ -24,3 +24,4 @@ class SignLanguageDataset(Dataset):
 
         return image, label
 
+

@@ -10,6 +10,7 @@ from dataset import SignLanguageDataset
 from training_thread import TrainingThread
 from threading import Event
 
+
 class Train(QWidget):
     def __init__(self, csv_file):
         super().__init__()
