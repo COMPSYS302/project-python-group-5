@@ -120,6 +120,4 @@ class ProcessingWindow(QMainWindow):
         self.close()
 
     def finishedProcessing(self, all_images, unique_images):
-        # You can handle the lists of all images and unique images here
-        # For example, storing them in the main window or displaying a message
-        self.close()  # Optionally update window or close after processing
+        self.close()

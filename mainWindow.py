@@ -4,6 +4,7 @@ from PyQt5.QtGui import QPixmap
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
 from Train import Train
+from processingwindowcamera import ProcessingWindow
 
 class ImageLoaderThread(QtCore.QThread):
     update_pixmap = QtCore.pyqtSignal(QPixmap, int, int)
@@ -13,6 +14,8 @@ class ImageLoaderThread(QtCore.QThread):
         super().__init__()
         self.images = images
         self.thumbnail_size = thumbnail_size
+        dataProcessingAction = QAction("Process Data", self)
+        dataProcessingAction.triggered.connect(self.openDataProcessingWindow)
 
     def run(self):
         total = len(self.images)
@@ -151,10 +154,17 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Error", "No CSV file loaded. Please load a CSV file first.")
 
     def openTestPage(self):
-        if hasattr(self, 'trainPage') and self.trainPage.isVisible():
-            self.trainPage.show()
+        print("Attempting to open test page...")
+        if hasattr(self, 'cameraWindow') and self.cameraWindow.isVisible():
+            print("Camera window is already visible.")
+            self.cameraWindow.raise_()
         else:
-            QMessageBox.information(self, "Error", "No train file loaded. Please train a CSV file first.")
+            print("Creating new camera window...")
+            from camerawindow import CameraWindow
+            self.cameraWindow = CameraWindow(self)
+            self.cameraWindow.show()
+            print("Camera window should be open now.")
+
 
 def main():
     app = QApplication([])
