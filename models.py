@@ -1,50 +1,60 @@
 import torch
 import torch.nn as nn
+import torchvision.models as models
 
-class SimpleDNN(nn.Module):
-    def __init__(self):
-        super(SimpleDNN, self).__init__()
-        self.fc1 = nn.Linear(28*28, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, 36)
+class ModifiedAlexNet(nn.Module):
+    def __init__(self, num_classes=36):
+        super(ModifiedAlexNet, self).__init__()
+        alexnet = models.alexnet(pretrained=True)
+        self.features = alexnet.features
+        self.avgpool = alexnet.avgpool
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, num_classes),
+        )
 
     def forward(self, x):
-        x = x.view(-1, 28*28)
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
         return x
 
-class CNNModel(nn.Module):
-    def __init__(self):
-        super(CNNModel, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
-        self.fc1 = nn.Linear(64*12*12, 128)
-        self.fc2 = nn.Linear(128, 36)
+class ModifiedResNet(nn.Module):
+    def __init__(self, num_classes=36):
+        super(ModifiedResNet, self).__init__()
+        resnet = models.resnet18(pretrained=True)
+        self.features = nn.Sequential(*list(resnet.children())[:-1])  # Remove original fc layer
+        self.fc = nn.Linear(resnet.fc.in_features, num_classes)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
+        return x
+
+class CustomCNN(nn.Module):
+    def __init__(self, num_classes=36):
+        super(CustomCNN, self).__init__()
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
+        self.fc1 = nn.Linear(256 * 4 * 4, 512)  # Assuming input images are 32x32
+        self.fc2 = nn.Linear(512, num_classes)
 
     def forward(self, x):
         x = torch.relu(self.conv1(x))
-        x = torch.max_pool2d(torch.relu(self.conv2(x)), 2)
-        x = x.view(-1, 64*12*12)
+        x = torch.max_pool2d(x, 2)
+        x = torch.relu(self.conv2(x))
+        x = torch.max_pool2d(x, 2)
+        x = torch.relu(self.conv3(x))
+        x = torch.max_pool2d(x, 2)
+        x = torch.flatten(x, 1)
         x = torch.relu(self.fc1(x))
         x = self.fc2(x)
-        return x
-
-class ComplexDNN(nn.Module):
-    def __init__(self):
-        super(ComplexDNN, self).__init__()
-        self.fc1 = nn.Linear(28*28, 1024)
-        self.fc2 = nn.Linear(1024, 512)
-        self.fc3 = nn.Linear(512, 256)
-        self.fc4 = nn.Linear(256, 128)
-        self.fc5 = nn.Linear(128, 36)
-
-    def forward(self, x):
-        x = x.view(-1, 28*28)
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = torch.relu(self.fc3(x))
-        x = torch.relu(self.fc4(x))
-        x = self.fc5(x)
         return x
