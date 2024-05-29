@@ -3,7 +3,7 @@ import pandas as pd
 from numpy import empty
 
 
-class ProcessingWindow(QWidget):
+class ProcessingWindowCamera(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi()

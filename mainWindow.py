@@ -4,7 +4,7 @@ from PyQt5.QtGui import QPixmap
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
 from Train import Train
-from processingwindowcamera import ProcessingWindow
+from processingwindowcamera import ProcessingWindowCamera
 
 class ImageLoaderThread(QtCore.QThread):
     update_pixmap = QtCore.pyqtSignal(QPixmap, int, int)
