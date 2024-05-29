@@ -146,7 +146,8 @@ class MainWindow(QMainWindow):
         if self.csv_file:
             self.trainPage = Train(self.csv_file)
             self.trainPage.show()
-
+            QMessageBox.information(self, "Training Initiated",
+                                    "Training module has been opened with the selected CSV file.")
         else:
             QMessageBox.information(self, "Error", "No CSV file loaded. Please load a CSV file first.")
 
