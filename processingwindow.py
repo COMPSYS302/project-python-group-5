@@ -38,8 +38,9 @@ class ProcessingThread(QThread):
                     raise ValueError("CSV file contains no data or only headers.")
 
                 for index, row in enumerate(rows):
-                    if len(row) == 785:  # Assuming there's one label or identifier column
-                        row = row[1:]  # Skip the label
+                    current_image = [row[0]]
+                    current_unique_image = [row[0]]
+                    row = row[1:]  # Skip the label
                     pixel_data = np.array([int(x) for x in row], dtype=np.uint8).reshape((28, 28))
                     image = QImage(28, 28, QImage.Format_RGB888)
                     for y in range(28):
@@ -48,13 +49,15 @@ class ProcessingThread(QThread):
                             color = QColor(gray, gray, gray)
                             image.setPixelColor(x, y, color)
 
-                    all_images.append(image)
+                    current_image.append(image)
+                    all_images.append(current_image)
 
                     # Check for uniqueness
                     pixel_data_tuple = tuple(pixel_data.flatten())
                     if pixel_data_tuple not in unique_pixel_data:
                         unique_pixel_data.add(pixel_data_tuple)
-                        unique_images.append(image)
+                        current_unique_image.append(image)
+                        unique_images.append(current_image)
 
                     elapsed_time = time.time() - start_time
                     progress_percent = int((index + 1) / total_lines * 100)
