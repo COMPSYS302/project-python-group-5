@@ -4,7 +4,6 @@ from PyQt5.QtGui import QPixmap
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
 from Train import Train
-from processingwindowcamera import ProcessingWindowCamera
 
 class ImageLoaderThread(QtCore.QThread):
     update_pixmap = QtCore.pyqtSignal(QPixmap, int, int)
@@ -14,8 +13,6 @@ class ImageLoaderThread(QtCore.QThread):
         super().__init__()
         self.images = images
         self.thumbnail_size = thumbnail_size
-        dataProcessingAction = QAction("Process Data", self)
-        dataProcessingAction.triggered.connect(self.openDataProcessingWindow)
 
     def run(self):
         total = len(self.images)
