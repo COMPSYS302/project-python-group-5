@@ -1,74 +1,160 @@
 import sys
 import cv2
-import mediapipe as mp
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QApplication
-from PyQt5.QtCore import QTimer, Qt
+import torch
+import torchvision.transforms as transforms
+import warnings
+import numpy as np
+
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication
+from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
+
+from models import ModifiedAlexNet  # Ensure this import is correct
+import mediapipe as mp  # Add MediaPipe for hand tracking
+
+# Suppress specific warnings
+warnings.filterwarnings("ignore", category=UserWarning, module='google.protobuf.symbol_database')
+
+class CameraThread(QThread):
+    frameCaptured = pyqtSignal(np.ndarray)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.capture = cv2.VideoCapture(0)  # Initialize camera
+        self.running = True
+
+    def run(self):
+        while self.running:
+            ret, frame = self.capture.read()
+            if ret:
+                self.frameCaptured.emit(frame)
+            QThread.msleep(500)  # Capture frame every 100ms for stability
+
+    def stop(self):
+        self.running = False
+        self.capture.release()
+
+class PredictionThread(QThread):
+    predictionMade = pyqtSignal(str)
+
+    def __init__(self, model, frame, device, parent=None):
+        super().__init__(parent)
+        self.model = model
+        self.frame = frame
+        self.device = device
+
+    def run(self):
+        try:
+            transform = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.Grayscale(num_output_channels=3),  # Convert image to grayscale with 3 channels
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5,), (0.5,))
+            ])
+
+            image = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+            image = transform(image).unsqueeze(0).to(self.device)  # Move to the same device as the model
+
+            with torch.no_grad():
+                self.model.eval()
+                outputs = self.model(image)
+                _, predicted = torch.max(outputs, 1)
+                prediction = self.idx_to_class(predicted.item())
+
+            self.predictionMade.emit(prediction)
+        except Exception as e:
+            print(f"Error in PredictionThread: {e}")
+
+    def idx_to_class(self, idx):
+        # Map the predicted index to the corresponding ASL character
+        asl_classes = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        if 0 <= idx < len(asl_classes):
+            return asl_classes[idx]
+        return "Unknown"
 
 class CameraWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.timer = QTimer(self)
-        self.camera = None
-        self.setupUi()
+        self.initUI()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = self.load_model()
 
         # Initialize MediaPipe Hands
         self.mp_hands = mp.solutions.hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
         self.mp_drawing = mp.solutions.drawing_utils
 
-    def setupUi(self):
-        self.setWindowTitle("Camera View")
-        self.setGeometry(100, 100, 640, 480)
+        self.cameraThread = CameraThread()
+        self.cameraThread.frameCaptured.connect(self.updateFrame)
+        self.cameraThread.start()
+
+    def initUI(self):
+        self.setWindowTitle("Camera Window")
+        self.setGeometry(200, 200, 800, 600)
         layout = QVBoxLayout(self)
 
-        self.imageLabel = QLabel(self)
-        layout.addWidget(self.imageLabel)
+        self.cameraLabel = QLabel(self)
+        self.cameraLabel.setFixedSize(640, 480)
+        layout.addWidget(self.cameraLabel)
 
-        self.startButton = QPushButton("Start Camera", self)
-        self.startButton.clicked.connect(self.startCamera)
-        layout.addWidget(self.startButton)
+        self.predictionLabel = QLabel("Prediction: ", self)
+        layout.addWidget(self.predictionLabel)
 
-    def startCamera(self):
-        self.camera = cv2.VideoCapture(0)
-        self.timer.timeout.connect(self.updateFrame)
-        self.timer.start(30)
+        self.setLayout(layout)
 
-    def updateFrame(self):
-        ret, frame = self.camera.read()
-        if ret:
+    def load_model(self):
+        model = ModifiedAlexNet(num_classes=36)  # Ensure this matches your training setup
+        model.load_state_dict(torch.load(r'C:\project-python-group-5\trained_model.pth'))
+        model.to(self.device)
+        model.eval()  # Set the model to evaluation mode
+        return model
+
+    def updateFrame(self, frame):
+        try:
             frame = self.detectAndDrawHands(frame)
-            qt_img = self.convert_cv_qt(frame)
-            self.imageLabel.setPixmap(qt_img)
+            image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = image.shape
+            bytesPerLine = ch * w
+            qImg = QImage(image.data, w, h, bytesPerLine, QImage.Format_RGB888)
+            self.cameraLabel.setPixmap(QPixmap.fromImage(qImg))
+            self.processFrame(frame)  # Process the frame for prediction
+        except Exception as e:
+            print(f"Error in updateFrame: {e}")
+
+    def processFrame(self, frame):
+        try:
+            self.predictionThread = PredictionThread(self.model, frame, self.device)
+            self.predictionThread.predictionMade.connect(self.updatePrediction)
+            self.predictionThread.start()
+        except Exception as e:
+            print(f"Error in processFrame: {e}")
+
+    def updatePrediction(self, prediction):
+        try:
+            self.predictionLabel.setText(f"Prediction: {prediction}")
+        except Exception as e:
+            print(f"Error in updatePrediction: {e}")
 
     def detectAndDrawHands(self, frame):
-        # Convert the BGR image to RGB, flip the image around y-axis for correct handedness output
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        rgb_frame = cv2.flip(rgb_frame, 1)
-        results = self.mp_hands.process(rgb_frame)
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                self.mp_drawing.draw_landmarks(rgb_frame, hand_landmarks, mp.solutions.hands.HAND_CONNECTIONS)
-        return cv2.flip(rgb_frame, 1)  # Flip back for correct display
-
-    def convert_cv_qt(self, cv_img):
-        """Convert from an OpenCV image to QPixmap"""
-        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        p = convert_to_Qt_format.scaled(640, 480, Qt.KeepAspectRatio)
-        return QPixmap.fromImage(p)
+        try:
+            # Convert the BGR image to RGB
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.mp_hands.process(rgb_frame)
+            if results.multi_hand_landmarks:
+                for hand_landmarks in results.multi_hand_landmarks:
+                    self.mp_drawing.draw_landmarks(frame, hand_landmarks, mp.solutions.hands.HAND_CONNECTIONS)
+            return frame
+        except Exception as e:
+            print(f"Error in detectAndDrawHands: {e}")
+            return frame
 
     def closeEvent(self, event):
-        """Properly release the camera resource and close MediaPipe Hands."""
-        if self.camera is not None:
-            self.timer.stop()
-            self.camera.release()
+        self.cameraThread.stop()
         self.mp_hands.close()  # Close MediaPipe Hands
         event.accept()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    win = CameraWindow()
-    win.show()
+    window = CameraWindow()
+    window.show()
     sys.exit(app.exec_())

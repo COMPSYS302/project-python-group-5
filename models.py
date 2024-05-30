@@ -2,12 +2,14 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
+import torch.nn as nn
+import torchvision.models as models
+
 class ModifiedAlexNet(nn.Module):
     def __init__(self, num_classes=36):
         super(ModifiedAlexNet, self).__init__()
-        alexnet = models.alexnet(pretrained=True)
+        alexnet = models.alexnet(pretrained=False)  # Ensure this matches your training setup
         self.features = alexnet.features
-        self.avgpool = alexnet.avgpool
         self.classifier = nn.Sequential(
             nn.Dropout(),
             nn.Linear(256 * 6 * 6, 4096),
@@ -20,7 +22,6 @@ class ModifiedAlexNet(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
@@ -28,8 +29,8 @@ class ModifiedAlexNet(nn.Module):
 class ModifiedResNet(nn.Module):
     def __init__(self, num_classes=36):
         super(ModifiedResNet, self).__init__()
-        resnet = models.resnet18(pretrained=True)
-        self.features = nn.Sequential(*list(resnet.children())[:-1])  # Remove original fc layer
+        resnet = models.resnet18(pretrained=False)
+        self.features = nn.Sequential(*list(resnet.children())[:-1])
         self.fc = nn.Linear(resnet.fc.in_features, num_classes)
 
     def forward(self, x):
@@ -44,7 +45,7 @@ class CustomCNN(nn.Module):
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(256 * 4 * 4, 512)  # Assuming input images are 32x32
+        self.fc1 = nn.Linear(256 * 4 * 4, 512)
         self.fc2 = nn.Linear(512, num_classes)
 
     def forward(self, x):

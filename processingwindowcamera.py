@@ -2,6 +2,8 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QFileDial
 import pandas as pd
 from numpy import empty
 
+from processingwindow import ProcessingWindow
+
 
 class ProcessingWindowCamera(QWidget):
     def __init__(self, parent=None):
