@@ -1,6 +1,6 @@
 from PyQt5 import QtWidgets, QtGui, QtCore
 from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollArea, QVBoxLayout, QWidget, QApplication, QMessageBox, QGridLayout, QProgressBar
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QImage
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
 from Train import Train
@@ -17,8 +17,11 @@ class ImageLoaderThread(QtCore.QThread):
     def run(self):
         total = len(self.images)
         for i, img in enumerate(self.images):
-            label = img[0]
-            pixmap = QPixmap.fromImage(img[1])
+            label, qimage = img  # Unpack the tuple
+            if not isinstance(qimage, QImage):
+                print(f"Error: Expected QImage, got {type(qimage)}")
+                continue
+            pixmap = QPixmap.fromImage(qimage)
             pixmap = pixmap.scaled(self.thumbnail_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             col = i % 6
             row = i // 6
@@ -26,9 +29,8 @@ class ImageLoaderThread(QtCore.QThread):
             self.progress_updated.emit((i + 1) * 100 // total)
             self.msleep(10)
 
-
 class ImageWindow(QMainWindow):
-    def __init__(self, image, label, parent=None):
+    def __init__(self, pixmap, label, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Image Prediction")
         self.setGeometry(100, 100, 400, 800)
@@ -44,7 +46,7 @@ class ImageWindow(QMainWindow):
         # Label for displaying the image description or title
         self.titleLabel = QLabel(reference[int(label)], self)
         self.titleLabel.setAlignment(QtCore.Qt.AlignCenter)
-        self.titleLabel.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        self.titleLabel.setStyleSheet("font-size: 16px; font-weight: bold; color: black;")
         layout.addWidget(self.titleLabel)
 
         # Label for displaying the image
@@ -52,22 +54,16 @@ class ImageWindow(QMainWindow):
         self.imageLabel.setAlignment(QtCore.Qt.AlignCenter)
         layout.addWidget(self.imageLabel)
 
-        self.displayImage(image)
+        self.displayImage(pixmap)
 
     def displayImage(self, pixmap):
         self.imageLabel.setPixmap(pixmap)
-
-    def plotProbabilities(self, probabilities):
-        ax = self.figure.add_subplot(111)
-        ax.bar(range(len(probabilities)), probabilities, tick_label=[str(i) for i in range(len(probabilities))])
-        ax.set_title("Output Probabilities")
-        ax.set_ylabel("Probability")
-        self.canvas.draw()
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.images = []
+        self.labels = []
         self.unique_images = []
         self.csv_file = ""
         self.initUI()
@@ -110,7 +106,8 @@ class MainWindow(QMainWindow):
             self.processWindow.show()
 
     def storeImages(self, all_images, unique_images):
-        self.images = all_images
+        self.images = all_images  # Store as-is
+        self.labels = [img[0] for img in all_images]  # Extract labels
         self.unique_images = unique_images
         self.processWindow = None  # Clean up
 
@@ -138,7 +135,8 @@ class MainWindow(QMainWindow):
         centralWidget.setLayout(layout)
         self.setCentralWidget(centralWidget)
 
-        self.loader_thread = ImageLoaderThread(self.images, QtCore.QSize(75, 75))
+        # Ensure self.unique_images contains tuples of (label, QImage)
+        self.loader_thread = ImageLoaderThread(self.unique_images, QtCore.QSize(75, 75))
         self.loader_thread.update_pixmap.connect(self.addImageToGrid, QtCore.Qt.QueuedConnection)
         self.loader_thread.progress_updated.connect(self.updateProgressBar)
         self.loader_thread.start()
@@ -162,13 +160,12 @@ class MainWindow(QMainWindow):
         self.processWindow = None
 
     def openTrainPage(self):
-        if self.csv_file:
-            self.trainPage = Train(self.csv_file)
+        if self.images and self.labels:
+            self.trainPage = Train(self.images, self.labels)
             self.trainPage.show()
-            QMessageBox.information(self, "Training Initiated",
-                                    "Training module has been opened with the selected CSV file.")
+            QMessageBox.information(self, "Training Initiated", "Training module has been opened with the selected images and labels.")
         else:
-            QMessageBox.information(self, "Error", "No CSV file loaded. Please load a CSV file first.")
+            QMessageBox.information(self, "Error", "No images loaded. Please load images first.")
 
     def openTestPage(self):
         print("Attempting to open test page...")
@@ -181,7 +178,6 @@ class MainWindow(QMainWindow):
             self.cameraWindow = CameraWindow(self)
             self.cameraWindow.show()
             print("Camera window should be open now.")
-
 
 def main():
     app = QApplication([])

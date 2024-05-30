@@ -4,7 +4,7 @@ from PyQt5.QtCore import Qt
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 import pyqtgraph as pg
-from models import ModifiedAlexNet, ModifiedResNet, CustomCNN  # Make sure these are correctly imported
+from models import ModifiedAlexNet, ModifiedResNet, CustomCNN
 from dataset import SignLanguageDataset
 from training_thread import TrainingThread
 from threading import Event
@@ -12,9 +12,10 @@ import time
 import torch
 
 class Train(QWidget):
-    def __init__(self, csv_file='path_to_your_csv_file.csv'):  # Default path included here
+    def __init__(self, images, labels):
         super().__init__()
-        self.csv_file = csv_file
+        self.images = images
+        self.labels = labels
         self.initUI()
         self.train_thread = None
         self.stop_event = Event()
@@ -52,10 +53,12 @@ class Train(QWidget):
         self.lossPlotWidget = pg.PlotWidget(title="Training Loss")
         self.lossPlotWidget.addLegend()
         self.lossCurve = self.lossPlotWidget.plot(pen='r', name='Training Loss')
+        self.layout.addWidget(self.lossPlotWidget)
 
         self.accPlotWidget = pg.PlotWidget(title="Validation Accuracy")
         self.accPlotWidget.addLegend()
         self.accCurve = self.accPlotWidget.plot(pen='b', name='Validation Accuracy')
+        self.layout.addWidget(self.accPlotWidget)
 
         self.statusLabel = QLabel("Ready")
         self.layout.addWidget(self.statusLabel)
@@ -87,18 +90,17 @@ class Train(QWidget):
         train_ratio = 100 - validation_ratio
 
         transform = transforms.Compose([
-            transforms.Grayscale(num_output_channels=3),  # Convert grayscale to RGB
+            transforms.Grayscale(num_output_channels=3),
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize((0.5,), (0.5,))
         ])
 
-        dataset = SignLanguageDataset(self.csv_file, transform=transform)
+        dataset = SignLanguageDataset(self.images, self.labels, transform=transform)
         train_size = int(train_ratio / 100 * len(dataset))
         val_size = len(dataset) - train_size
         train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-        # Dynamically reduce batch size to avoid OOM errors
         batch_size = int((self.batchSizeSlider.value() / 100) * len(dataset))
         while batch_size > 1:
             try:
@@ -130,8 +132,8 @@ class Train(QWidget):
         self.progressBar.setValue(percentage)
 
     def updateEpochProgress(self, epoch, loss, acc):
-        self.lossCurve.setData(range(epoch), [loss] * epoch)  # Update the loss curve
-        self.accCurve.setData(range(epoch), [acc] * epoch)  # Update the accuracy curve
+        self.lossCurve.setData(range(epoch), [loss] * epoch)
+        self.accCurve.setData(range(epoch), [acc] * epoch)
         self.statusLabel.setText(f"Epoch: {epoch}, Loss: {loss:.4f}, Acc: {acc:.2f}%")
 
     def disableControls(self):
@@ -148,6 +150,7 @@ class Train(QWidget):
         self.modelSelector.setEnabled(True)
         self.trainRatioSlider.setEnabled(True)
         self.batchSizeSlider.setEnabled(True)
+        self.epochsSlider.setEnabled(True)
 
     def onTrainingFinished(self):
         self.enableControls()
@@ -164,6 +167,6 @@ class Train(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    trainApp = Train()
+    trainApp = Train([], [])
     trainApp.show()
     sys.exit(app.exec_())

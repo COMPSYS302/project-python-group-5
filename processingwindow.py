@@ -5,11 +5,10 @@ from PyQt5.QtGui import QImage, QColor
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QProgressBar, QLabel, QMessageBox
 import time
 
-
 class ProcessingThread(QThread):
     progress = pyqtSignal(int)
-    timeLeft = pyqtSignal(str)  # Signal for estimated time left
-    dataLoaded = pyqtSignal(list, list)  # Emit both all images and unique images
+    timeLeft = pyqtSignal(str)
+    dataLoaded = pyqtSignal(list, list)
     errorOccurred = pyqtSignal(str)
 
     def __init__(self, filePath):
@@ -38,10 +37,8 @@ class ProcessingThread(QThread):
                     raise ValueError("CSV file contains no data or only headers.")
 
                 for index, row in enumerate(rows):
-                    current_image = [row[0]]
-                    current_unique_image = [row[0]]
-                    row = row[1:]  # Skip the label
-                    pixel_data = np.array([int(x) for x in row], dtype=np.uint8).reshape((28, 28))
+                    label = row[0]
+                    pixel_data = np.array([int(x) for x in row[1:]], dtype=np.uint8).reshape((28, 28))
                     image = QImage(28, 28, QImage.Format_RGB888)
                     for y in range(28):
                         for x in range(28):
@@ -49,15 +46,13 @@ class ProcessingThread(QThread):
                             color = QColor(gray, gray, gray)
                             image.setPixelColor(x, y, color)
 
-                    current_image.append(image)
-                    all_images.append(current_image)
+                    all_images.append((label, image))
 
                     # Check for uniqueness
                     pixel_data_tuple = tuple(pixel_data.flatten())
                     if pixel_data_tuple not in unique_pixel_data:
                         unique_pixel_data.add(pixel_data_tuple)
-                        current_unique_image.append(image)
-                        unique_images.append(current_image)
+                        unique_images.append((label, image))
 
                     elapsed_time = time.time() - start_time
                     progress_percent = int((index + 1) / total_lines * 100)
@@ -76,7 +71,6 @@ class ProcessingThread(QThread):
         except Exception as e:
             self.errorOccurred.emit(str(e))
 
-
 class ProcessingWindow(QMainWindow):
     def __init__(self, filePath, parent=None):
         super().__init__(parent)
@@ -84,7 +78,7 @@ class ProcessingWindow(QMainWindow):
         self.initUI()
         self.thread = ProcessingThread(filePath)
         self.thread.progress.connect(self.updateProgressBar)
-        self.thread.timeLeft.connect(self.updateTimeLabel)  # Connect to update time label
+        self.thread.timeLeft.connect(self.updateTimeLabel)
         self.thread.dataLoaded.connect(self.finishedProcessing)
         self.thread.errorOccurred.connect(self.handleError)
         self.thread.start()
@@ -124,3 +118,4 @@ class ProcessingWindow(QMainWindow):
 
     def finishedProcessing(self, all_images, unique_images):
         self.close()
+        self.parent().storeImages(all_images, unique_images)
