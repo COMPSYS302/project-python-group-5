@@ -6,7 +6,7 @@ from UIcomponents import SearchBar
 from Train import Train
 
 class ImageLoaderThread(QtCore.QThread):
-    update_pixmap = QtCore.pyqtSignal(QPixmap, int, int)
+    update_pixmap = QtCore.pyqtSignal(QPixmap, int, int, str)
     progress_updated = QtCore.pyqtSignal(int)
 
     def __init__(self, images, thumbnail_size):
@@ -17,27 +17,46 @@ class ImageLoaderThread(QtCore.QThread):
     def run(self):
         total = len(self.images)
         for i, img in enumerate(self.images):
-            pixmap = QPixmap.fromImage(img)
+            label = img[0]
+            pixmap = QPixmap.fromImage(img[1])
             pixmap = pixmap.scaled(self.thumbnail_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             col = i % 6
             row = i // 6
-            self.update_pixmap.emit(pixmap, row, col)
+            self.update_pixmap.emit(pixmap, row, col, label)
             self.progress_updated.emit((i + 1) * 100 // total)
             self.msleep(10)
 
+
 class ImageWindow(QMainWindow):
-    def __init__(self, image, parent=None):
+    def __init__(self, image, label, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Image Prediction")
-
         self.setGeometry(100, 100, 400, 800)
+        reference = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "R", "S", "T", "U",
+                     "V", "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+        # Create main layout and central widget
+        layout = QVBoxLayout()
+        centralWidget = QWidget(self)
+        self.setCentralWidget(centralWidget)
+        centralWidget.setLayout(layout)
+
+        # Label for displaying the image description or title
+        self.titleLabel = QLabel(reference[int(label)], self)
+        self.titleLabel.setAlignment(QtCore.Qt.AlignCenter)
+        self.titleLabel.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        layout.addWidget(self.titleLabel)
+
+        # Label for displaying the image
         self.imageLabel = QLabel(self)
         self.imageLabel.setAlignment(QtCore.Qt.AlignCenter)
-        self.setCentralWidget(self.imageLabel)
+        layout.addWidget(self.imageLabel)
+
         self.displayImage(image)
 
     def displayImage(self, pixmap):
         self.imageLabel.setPixmap(pixmap)
+
     def plotProbabilities(self, probabilities):
         ax = self.figure.add_subplot(111)
         ax.bar(range(len(probabilities)), probabilities, tick_label=[str(i) for i in range(len(probabilities))])
@@ -119,20 +138,20 @@ class MainWindow(QMainWindow):
         centralWidget.setLayout(layout)
         self.setCentralWidget(centralWidget)
 
-        self.loader_thread = ImageLoaderThread(self.unique_images, QtCore.QSize(75, 75))
+        self.loader_thread = ImageLoaderThread(self.images, QtCore.QSize(75, 75))
         self.loader_thread.update_pixmap.connect(self.addImageToGrid, QtCore.Qt.QueuedConnection)
         self.loader_thread.progress_updated.connect(self.updateProgressBar)
         self.loader_thread.start()
 
-    def addImageToGrid(self, pixmap, row, col):
-        label = QLabel()
-        label.setPixmap(pixmap)
-        label.setAlignment(QtCore.Qt.AlignCenter)
-        label.mousePressEvent = lambda event, pix=pixmap: self.onImageClick(pix)
-        self.grid.addWidget(label, row, col)
+    def addImageToGrid(self, pixmap, row, col, label):
+        Qlabel = QLabel(label)
+        Qlabel.setPixmap(pixmap)
+        Qlabel.setAlignment(QtCore.Qt.AlignCenter)
+        Qlabel.mousePressEvent = lambda event, pix=pixmap: self.onImageClick(pix, label)
+        self.grid.addWidget(Qlabel, row, col)
 
-    def onImageClick(self, pixmap):
-        self.imageWindow = ImageWindow(pixmap)
+    def onImageClick(self, pixmap, label):
+        self.imageWindow = ImageWindow(pixmap, label)
         self.imageWindow.show()
 
     def updateProgressBar(self, value):
