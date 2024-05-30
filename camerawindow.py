@@ -9,8 +9,8 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
 
-from models import ModifiedAlexNet  # Ensure this import is correct
-import mediapipe as mp  # Add MediaPipe for hand tracking
+from models import ModifiedAlexNet
+import mediapipe as mp
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=UserWarning, module='google.protobuf.symbol_database')
