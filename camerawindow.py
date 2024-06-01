@@ -79,8 +79,9 @@ class CameraWindow(QWidget):
         super().__init__(parent)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_files = self.getModelFiles()
-        self.model = self.modelComboBox.currentText()
+        self.model = None
         self.initUI()
+        self.model = self.modelComboBox.currentText()
 
         if self.model is not None:
             # Initialize MediaPipe Hands
@@ -97,8 +98,7 @@ class CameraWindow(QWidget):
         layout = QVBoxLayout(self)
 
         self.modelComboBox = QComboBox(self)
-        self.modelComboBox.addItems(self.model_files)
-        self.modelComboBox.currentIndexChanged.connect(self.model_selection_changed)
+        self.modelComboBox.addItems([self.formatModelName(f) for f in self.model_files])
         layout.addWidget(self.modelComboBox)
 
         self.cameraLabel = QLabel(self)
@@ -121,7 +121,7 @@ class CameraWindow(QWidget):
             QMessageBox.critical(self, "Error", "No Trained Model Available")
             return None
     def getModelFiles(self):
-        modeldirectory = r'C:\project-python-group-5'
+        modeldirectory = '/Users/tony/Documents/COMPSYS 305/project-python-group-5'
         try:
             return [f for f in os.listdir(modeldirectory) if f.endswith('.pth')]
         except FileNotFoundError:
@@ -139,6 +139,10 @@ class CameraWindow(QWidget):
             self.processFrame(frame)  # Process the frame for prediction
         except Exception as e:
             print(f"Error in updateFrame: {e}")
+
+    def formatModelName(self, filename):
+        # Remove the file extension and replace underscores with spaces
+        return filename.replace('_', ' ').replace('.pth', '').title()
 
     def processFrame(self, frame):
         try:
