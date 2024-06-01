@@ -1,6 +1,6 @@
 from PyQt5 import QtWidgets, QtGui, QtCore
 from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollArea, QVBoxLayout, QWidget, QApplication, \
-    QMessageBox, QGridLayout, QProgressBar, QPushButton, QHBoxLayout
+    QMessageBox, QGridLayout, QPushButton, QHBoxLayout
 from PyQt5.QtGui import QPixmap, QImage
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
@@ -117,6 +117,8 @@ class MainWindow(QMainWindow):
         self.container.setLayout(self.grid)
         self.scroll.setWidget(self.container)
         self.scroll.setWidgetResizable(True)
+        self.scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+        self.scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         layout.addWidget(self.scroll)
 
         # Pagination controls
