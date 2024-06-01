@@ -22,6 +22,8 @@ class Train(QWidget):
         self.stop_event = Event()
         self.start_time = None
         self.batch_preparation_window = None
+        self.epoch_losses = []
+        self.epoch_accuracies = []
 
     def initUI(self):
         self.layout = QVBoxLayout()
@@ -56,11 +58,13 @@ class Train(QWidget):
         self.lossPlotWidget.addLegend()
         self.lossCurve = self.lossPlotWidget.plot(pen='r', name='Training Loss')
         self.layout.addWidget(self.lossPlotWidget)
+        self.lossPlotWidget.setVisible(False)
 
         self.accPlotWidget = pg.PlotWidget(title="Validation Accuracy")
         self.accPlotWidget.addLegend()
         self.accCurve = self.accPlotWidget.plot(pen='b', name='Validation Accuracy')
         self.layout.addWidget(self.accPlotWidget)
+        self.accPlotWidget.setVisible(False)
 
         self.statusLabel = QLabel("Ready")
         self.layout.addWidget(self.statusLabel)
@@ -85,6 +89,10 @@ class Train(QWidget):
         return slider, valueLabel
 
     def onTrainDataClicked(self):
+        self.lossPlotWidget.setVisible(True)
+        self.accPlotWidget.setVisible(True)
+
+        # Disable UI controls and start the training process
         self.disableControls()
         self.start_time = time.time()
         model_name = self.modelSelector.currentText()
@@ -131,8 +139,18 @@ class Train(QWidget):
         self.progressBar.setValue(percentage)
 
     def updateEpochProgress(self, epoch, loss, acc):
-        self.lossCurve.setData(range(epoch), [loss] * epoch)
-        self.accCurve.setData(range(epoch), [acc] * epoch)
+        # self.lossCurve.setData(range(epoch), [loss] * epoch)
+        # self.accCurve.setData(range(epoch), [acc] * epoch)
+        # self.statusLabel.setText(f"Epoch: {epoch}, Loss: {loss:.4f}, Acc: {acc:.2f}%")
+
+        self.epoch_losses.append(loss)
+        self.epoch_accuracies.append(acc)
+
+        # Update plot data
+        self.lossCurve.setData(list(range(epoch)), self.epoch_losses)
+        self.accCurve.setData(list(range(epoch)), self.epoch_accuracies)
+
+        # Update status label
         self.statusLabel.setText(f"Epoch: {epoch}, Loss: {loss:.4f}, Acc: {acc:.2f}%")
 
     def updatePreparationProgress(self, progress, num_batches):
