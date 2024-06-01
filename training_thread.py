@@ -90,10 +90,8 @@ class TrainingThread(QThread):
                     epoch_accuracy = (correct / total) * 100
                     self.epoch_progress.emit(epoch + 1, epoch_loss, epoch_accuracy)
 
-                # Validation logic if needed here
-
             if not self.stop_event.is_set():
-                torch.save(self.model.state_dict(), 'trained_model.pth')
+                torch.save(self.model.state_dict(), self.model + '.pth')
                 self.finished.emit()
 
         except Exception as e:

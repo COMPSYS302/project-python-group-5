@@ -1,9 +1,11 @@
 from PyQt5 import QtWidgets, QtGui, QtCore
-from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollArea, QVBoxLayout, QWidget, QApplication, QMessageBox, QGridLayout, QProgressBar, QPushButton, QHBoxLayout
+from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollArea, QVBoxLayout, QWidget, QApplication, \
+    QMessageBox, QGridLayout, QProgressBar, QPushButton, QHBoxLayout
 from PyQt5.QtGui import QPixmap, QImage
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
 from Train import Train
+
 
 class ImageLoaderThread(QtCore.QThread):
     update_pixmap = QtCore.pyqtSignal(QPixmap, int, int, str)
@@ -28,6 +30,7 @@ class ImageLoaderThread(QtCore.QThread):
             self.update_pixmap.emit(pixmap, row, col, label)
             self.progress_updated.emit((i + 1) * 100 // total)
             self.msleep(10)
+
 
 class ImageWindow(QMainWindow):
     def __init__(self, pixmap, label, parent=None):
@@ -59,6 +62,7 @@ class ImageWindow(QMainWindow):
     def displayImage(self, pixmap):
         self.imageLabel.setPixmap(pixmap)
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -69,6 +73,7 @@ class MainWindow(QMainWindow):
         self.images_per_page = 500
         self.csv_file = ""
         self.search_cache = {}
+        self.view_active = False  # Track if the view button is active
         self.initUI()
 
     def initUI(self):
@@ -96,9 +101,9 @@ class MainWindow(QMainWindow):
 
         # View menu
         viewMenu = self.menu.addMenu("View")
-        viewAction = QAction("View", self)
-        viewAction.triggered.connect(self.onViewClicked)
-        viewMenu.addAction(viewAction)
+        self.viewAction = QAction("View", self, checkable=True)
+        self.viewAction.triggered.connect(self.onViewClicked)
+        viewMenu.addAction(self.viewAction)
 
     def setupUIComponents(self):
         layout = QVBoxLayout()
@@ -113,9 +118,6 @@ class MainWindow(QMainWindow):
         self.scroll.setWidget(self.container)
         self.scroll.setWidgetResizable(True)
         layout.addWidget(self.scroll)
-
-        self.progressBar = QProgressBar(self)
-        layout.addWidget(self.progressBar)
 
         # Pagination controls
         self.paginationLayout = QHBoxLayout()
@@ -137,6 +139,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(centralWidget)
 
         self.setPaginationControlsVisible(False)  # Hide pagination controls initially
+        self.setUIComponentsVisible(False)  # Hide search bar and scroll area initially
+
+    def setUIComponentsVisible(self, visible):
+        self.searchBarWidget.setVisible(visible)
+        self.scroll.setVisible(visible)
 
     def setPaginationControlsVisible(self, visible):
         self.prevButton.setVisible(visible)
@@ -144,7 +151,17 @@ class MainWindow(QMainWindow):
         self.nextButton.setVisible(visible)
 
     def onViewClicked(self):
-        self.displayImages()
+        if self.view_active:
+            self.setUIComponentsVisible(False)  # Hide search bar and scroll area
+            self.setPaginationControlsVisible(False)  # Hide pagination controls
+            self.viewAction.setChecked(False)
+        else:
+            self.setUIComponentsVisible(True)  # Show search bar and scroll area
+            self.setPaginationControlsVisible(True)  # Show pagination controls
+            self.displayImages()
+            self.viewAction.setChecked(True)
+
+        self.view_active = not self.view_active
 
     def openFileDialog(self):
         fileName, _ = QFileDialog.getOpenFileName(self, "Open CSV file", "", "CSV Files (*.csv)")
@@ -163,7 +180,6 @@ class MainWindow(QMainWindow):
         self.labels = [img[0] for img in all_images]  # Extract labels
         self.processWindow = None  # Clean up
         self.current_page = 0  # Reset to the first page
-        self.updatePagination()
         print(f"Stored {len(self.images)} images.")
 
     def displayImages(self):
@@ -197,7 +213,6 @@ class MainWindow(QMainWindow):
         self.pageLabel.setText(f"Page {self.current_page + 1} of {total_pages}")
         self.prevButton.setEnabled(self.current_page > 0)
         self.nextButton.setEnabled(self.current_page < total_pages - 1)
-        self.setPaginationControlsVisible(total_pages > 1)  # Show pagination controls only if there are multiple pages
 
     def filterImages(self, searchText):
         searchText = searchText.lower()
@@ -252,7 +267,8 @@ class MainWindow(QMainWindow):
         if self.images and self.labels:
             self.trainPage = Train(self.images, self.labels)
             self.trainPage.show()
-            QMessageBox.information(self, "Training Initiated", "Training module has been opened with the selected images and labels.")
+            QMessageBox.information(self, "Training Initiated",
+                                    "Training module has been opened with the selected images and labels.")
         else:
             QMessageBox.information(self, "Error", "No images loaded. Please load images first.")
 
@@ -268,12 +284,14 @@ class MainWindow(QMainWindow):
             self.cameraWindow.show()
             print("Camera window should be open now.")
 
+
 def main():
     import sys
     app = QApplication(sys.argv)
     win = MainWindow()
     win.show()
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     main()
