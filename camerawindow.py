@@ -1,11 +1,12 @@
 import sys
 import cv2
+import os
 import torch
 import torchvision.transforms as transforms
 import warnings
 import numpy as np
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox, QComboBox
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
 
@@ -76,9 +77,11 @@ class PredictionThread(QThread):
 class CameraWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.initUI()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = self.load_model()
+        self.model_files = self.getModelFiles()
+        self.model = None
+        self.initUI()
+        self.model = self.modelComboBox.currentText()
 
         if self.model is not None:
             # Initialize MediaPipe Hands
@@ -93,6 +96,10 @@ class CameraWindow(QWidget):
         self.setWindowTitle("Camera Window")
         self.setGeometry(200, 200, 800, 600)
         layout = QVBoxLayout(self)
+
+        self.modelComboBox = QComboBox(self)
+        self.modelComboBox.addItems([self.formatModelName(f) for f in self.model_files])
+        layout.addWidget(self.modelComboBox)
 
         self.cameraLabel = QLabel(self)
         self.cameraLabel.setFixedSize(640, 480)
@@ -113,6 +120,13 @@ class CameraWindow(QWidget):
         except FileNotFoundError:
             QMessageBox.critical(self, "Error", "No Trained Model Available")
             return None
+    def getModelFiles(self):
+        modeldirectory = '/Users/tony/Documents/COMPSYS 305/project-python-group-5'
+        try:
+            return [f for f in os.listdir(modeldirectory) if f.endswith('.pth')]
+        except FileNotFoundError:
+            QMessageBox.critical(self, "Error", "No Trained Model Available")
+            return None
 
     def updateFrame(self, frame):
         try:
@@ -125,6 +139,10 @@ class CameraWindow(QWidget):
             self.processFrame(frame)  # Process the frame for prediction
         except Exception as e:
             print(f"Error in updateFrame: {e}")
+
+    def formatModelName(self, filename):
+        # Remove the file extension and replace underscores with spaces
+        return filename.replace('_', ' ').replace('.pth', '').title()
 
     def processFrame(self, frame):
         try:
