@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
         self.images_per_page = 500
         self.csv_file = ""
         self.search_cache = {}
+        self.view_active = False  # Track if the view button is active
         self.initUI()
 
     def initUI(self):
