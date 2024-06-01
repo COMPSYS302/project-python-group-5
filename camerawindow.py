@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 import warnings
 import numpy as np
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
 
@@ -80,13 +80,14 @@ class CameraWindow(QWidget):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = self.load_model()
 
-        # Initialize MediaPipe Hands
-        self.mp_hands = mp.solutions.hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-        self.mp_drawing = mp.solutions.drawing_utils
+        if self.model is not None:
+            # Initialize MediaPipe Hands
+            self.mp_hands = mp.solutions.hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            self.mp_drawing = mp.solutions.drawing_utils
 
-        self.cameraThread = CameraThread()
-        self.cameraThread.frameCaptured.connect(self.updateFrame)
-        self.cameraThread.start()
+            self.cameraThread = CameraThread()
+            self.cameraThread.frameCaptured.connect(self.updateFrame)
+            self.cameraThread.start()
 
     def initUI(self):
         self.setWindowTitle("Camera Window")
@@ -103,11 +104,15 @@ class CameraWindow(QWidget):
         self.setLayout(layout)
 
     def load_model(self):
-        model = ModifiedAlexNet(num_classes=36)  # Ensure this matches your training setup
-        model.load_state_dict(torch.load(r'C:\project-python-group-5\trained_model.pth'))
-        model.to(self.device)
-        model.eval()  # Set the model to evaluation mode
-        return model
+        try:
+            model = ModifiedAlexNet(num_classes=36)  # Adjust num_classes as needed
+            model.load_state_dict(torch.load(r'C:\project-python-group-5\trained_model.pth'))
+            model.to(self.device)
+            model.eval()  # Set the model to evaluation mode
+            return model
+        except FileNotFoundError:
+            QMessageBox.critical(self, "Error", "No Trained Model Available")
+            return None
 
     def updateFrame(self, frame):
         try:
