@@ -37,7 +37,14 @@ class ProcessingThread(QThread):
                     raise ValueError("CSV file contains no data or only headers.")
 
                 for index, row in enumerate(rows):
-                    label = row[0]
+                    label_number = int(row[0])
+                    if 0 <= label_number <= 25:
+                        label = chr(label_number + 65)  # Convert to 'A'-'Z'
+                    elif 26 <= label_number <= 35:
+                        label = chr(label_number + 22)  # Convert to '0'-'9'
+                    else:
+                        raise ValueError("Label number out of range (0-35).")
+
                     pixel_data = np.array([int(x) for x in row[1:]], dtype=np.uint8).reshape((28, 28))
                     image = QImage(28, 28, QImage.Format_RGB888)
                     for y in range(28):
