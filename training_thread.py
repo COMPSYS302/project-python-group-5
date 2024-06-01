@@ -7,6 +7,17 @@ from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as transforms
 
 
+class CustomLabelEncoder:
+    def __init__(self):
+        self.label_mapping = {chr(i): i - 65 for i in range(65, 91)}  # A-Z -> 0-25
+        self.label_mapping.update({chr(i): i - 22 for i in range(48, 58)})  # 0-9 -> 26-35
+
+    def transform(self, label):
+        if label not in self.label_mapping:
+            raise ValueError(f"Label '{label}' not found in label mapping.")
+        return self.label_mapping[label]
+
+
 class SubBatchDataset(Dataset):
     def __init__(self, dataset, indices):
         self.dataset = dataset
@@ -16,7 +27,8 @@ class SubBatchDataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        return self.dataset[self.indices[idx]]
+        label, image = self.dataset[self.indices[idx]]
+        return label, image
 
 
 class TrainingThread(QThread):
@@ -35,6 +47,7 @@ class TrainingThread(QThread):
         self.original_batch_size = original_batch_size
         self.stop_event = stop_event
         self.scaler = GradScaler()
+        self.label_encoder = CustomLabelEncoder()
 
     def run(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -64,15 +77,31 @@ class TrainingThread(QThread):
                     sub_batch_dataset = SubBatchDataset(self.train_dataset, sub_batch_indices)
                     sub_batch_loader = DataLoader(sub_batch_dataset, batch_size=max_sub_batch_size, shuffle=True)
 
-                    for images, labels in sub_batch_loader:
-                        images, labels = images.to(device), labels.to(device)
+                    for labels, images in sub_batch_loader:
+                        images = images.to(device)
+                        # Convert labels to tensor and move to device
+                        if isinstance(labels, tuple):
+                            labels = torch.tensor([self.label_encoder.transform(label) if isinstance(label, str) else label for label in labels]).to(device)
+                        else:
+                            labels = torch.tensor(self.label_encoder.transform(labels) if isinstance(labels, str) else labels).to(device)
                         optimizer.zero_grad()
 
                         with autocast():
                             outputs = self.model(images)
+                            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
+                                raise ValueError("NaN or Inf in outputs")
                             loss = criterion(outputs, labels)
+                            if torch.isnan(loss).any() or torch.isinf(loss).any():
+                                raise ValueError("NaN or Inf in loss")
 
                         self.scaler.scale(loss).backward()
+
+                        # Check for NaNs in gradients
+                        for param in self.model.parameters():
+                            if param.grad is not None and (
+                                    torch.isnan(param.grad).any() or torch.isinf(param.grad).any()):
+                                raise ValueError("NaN or Inf in gradients")
+
                         self.scaler.step(optimizer)
                         self.scaler.update()
 
@@ -86,12 +115,12 @@ class TrainingThread(QThread):
                         total_steps = self.epochs * len(self.train_dataset)
                         self.progress.emit(int((current_step / total_steps) * 100))
 
-                    epoch_loss = running_loss / total
-                    epoch_accuracy = (correct / total) * 100
-                    self.epoch_progress.emit(epoch + 1, epoch_loss, epoch_accuracy)
+                epoch_loss = running_loss / total
+                epoch_accuracy = (correct / total) * 100
+                self.epoch_progress.emit(epoch + 1, epoch_loss, epoch_accuracy)
 
             if not self.stop_event.is_set():
-                torch.save(self.model.state_dict(), self.model + '.pth')
+                torch.save(self.model.state_dict(), 'model.pth')
                 self.finished.emit()
 
         except Exception as e:
@@ -110,11 +139,16 @@ class TrainingThread(QThread):
             sub_batch_dataset = SubBatchDataset(self.train_dataset, sub_batch_indices)
             sub_batch_loader = DataLoader(sub_batch_dataset, batch_size=batch_size, shuffle=False)
 
-            for images, labels in sub_batch_loader:
-                images, labels = images.to(device), labels.to(device)
+            for labels, images in sub_batch_loader:
+                images = images.to(device)
+                # Convert labels to tensor and move to device
+                if isinstance(labels, tuple):
+                    labels = torch.tensor([self.label_encoder.transform(label) if isinstance(label, str) else label for label in labels]).to(device)
+                else:
+                    labels = torch.tensor(self.label_encoder.transform(labels) if isinstance(labels, str) else labels).to(device)
                 with autocast():
-                    _ = self.model(images)  # Run a forward pass
-                break  # If this works without an error, the batch size is okay
+                    _ = self.model(images)
+                break
             return True
         except RuntimeError as e:
             if 'out of memory' in str(e):
