@@ -2,11 +2,12 @@ import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QSlider, QPushButton, QComboBox, QProgressBar, QHBoxLayout, QMessageBox
 from PyQt5.QtCore import Qt
 from torch.utils.data import DataLoader, random_split
-from torchvision import transforms
+import torchvision.transforms as transforms
 import pyqtgraph as pg
 from models import ModifiedAlexNet, ModifiedResNet, CustomCNN
 from dataset import SignLanguageDataset
 from training_thread import TrainingThread
+from batch_preparation_window import BatchPreparationWindow
 from threading import Event
 import time
 import torch
@@ -14,12 +15,13 @@ import torch
 class Train(QWidget):
     def __init__(self, images, labels):
         super().__init__()
-        self.images = images
-        self.labels = labels
+        self.images = images  # Store images
+        self.labels = labels  # Store labels
         self.initUI()
         self.train_thread = None
         self.stop_event = Event()
         self.start_time = None
+        self.batch_preparation_window = None
 
     def initUI(self):
         self.layout = QVBoxLayout()
@@ -90,10 +92,12 @@ class Train(QWidget):
         train_ratio = 100 - validation_ratio
 
         transform = transforms.Compose([
-            transforms.Grayscale(num_output_channels=3),
             transforms.Resize((224, 224)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomRotation(10),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
             transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
 
         dataset = SignLanguageDataset(self.images, self.labels, transform=transform)
@@ -101,25 +105,20 @@ class Train(QWidget):
         val_size = len(dataset) - train_size
         train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-        batch_size = int((self.batchSizeSlider.value() / 100) * len(dataset))
-        while batch_size > 1:
-            try:
-                torch.cuda.empty_cache()
-                train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-                val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-                break
-            except RuntimeError as e:
-                if 'out of memory' in str(e):
-                    batch_size //= 2
-                else:
-                    raise e
+        original_batch_size = int((self.batchSizeSlider.value() / 100) * len(dataset))
+
+        self.batch_preparation_window = BatchPreparationWindow()
+        self.batch_preparation_window.show()
 
         epochs = self.epochsSlider.value()
         model = {'Modified AlexNet': ModifiedAlexNet, 'Modified ResNet': ModifiedResNet, 'Custom CNN': CustomCNN}[model_name]()
 
-        self.train_thread = TrainingThread(model, train_loader, val_loader, epochs, batch_size, self.stop_event)
+        val_loader = DataLoader(val_dataset, batch_size=original_batch_size, shuffle=False)
+
+        self.train_thread = TrainingThread(model, train_dataset, val_loader, epochs, original_batch_size, self.stop_event)
         self.train_thread.progress.connect(self.updateProgress)
         self.train_thread.epoch_progress.connect(self.updateEpochProgress)
+        self.train_thread.preparing.connect(self.updatePreparationProgress)
         self.train_thread.finished.connect(self.onTrainingFinished)
         self.train_thread.error_signal.connect(self.handleErrors)
         self.train_thread.start()
@@ -135,6 +134,13 @@ class Train(QWidget):
         self.lossCurve.setData(range(epoch), [loss] * epoch)
         self.accCurve.setData(range(epoch), [acc] * epoch)
         self.statusLabel.setText(f"Epoch: {epoch}, Loss: {loss:.4f}, Acc: {acc:.2f}%")
+
+    def updatePreparationProgress(self, progress, num_batches):
+        if self.batch_preparation_window:
+            self.batch_preparation_window.updatePreparationProgress(progress, num_batches)
+            if progress == 100:
+                self.batch_preparation_window.close()
+                self.batch_preparation_window = None
 
     def disableControls(self):
         self.trainButton.setEnabled(False)

@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtGui, QtCore
-from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollArea, QVBoxLayout, QWidget, QApplication, QMessageBox, QGridLayout, QProgressBar
+from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QScrollArea, QVBoxLayout, QWidget, QApplication, QMessageBox, QGridLayout, QProgressBar, QPushButton, QHBoxLayout
 from PyQt5.QtGui import QPixmap, QImage
 from processingwindow import ProcessingWindow
 from UIcomponents import SearchBar
@@ -64,8 +64,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.images = []
         self.labels = []
-        self.unique_images = []
+        self.filtered_images = []
+        self.current_page = 0
+        self.images_per_page = 500
         self.csv_file = ""
+        self.search_cache = {}
         self.initUI()
 
     def initUI(self):
@@ -73,6 +76,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
         self.menu = self.menuBar()
         self.setupMenus()
+        self.setupUIComponents()
 
     def setupMenus(self):
         # File menu
@@ -93,32 +97,14 @@ class MainWindow(QMainWindow):
         # View menu
         viewMenu = self.menu.addMenu("View")
         viewAction = QAction("View", self)
-        viewAction.triggered.connect(self.displayImages)
+        viewAction.triggered.connect(self.onViewClicked)
         viewMenu.addAction(viewAction)
 
-    def openFileDialog(self):
-        fileName, _ = QFileDialog.getOpenFileName(self, "Open CSV file", "", "CSV Files (*.csv)")
-        if fileName:
-            self.csv_file = fileName
-            self.processWindow = ProcessingWindow(fileName, self)
-            self.processWindow.thread.dataLoaded.connect(self.storeImages)
-            self.processWindow.thread.errorOccurred.connect(self.handleError)
-            self.processWindow.show()
-
-    def storeImages(self, all_images, unique_images):
-        self.images = all_images  # Store as-is
-        self.labels = [img[0] for img in all_images]  # Extract labels
-        self.unique_images = unique_images
-        self.processWindow = None  # Clean up
-
-    def displayImages(self):
-        if not self.unique_images:
-            QMessageBox.information(self, "Error", "No unique images to display.")
-            return
-
+    def setupUIComponents(self):
         layout = QVBoxLayout()
         self.searchBarWidget = SearchBar(self)
         layout.addWidget(self.searchBarWidget)
+        self.searchBarWidget.textChanged.connect(self.filterImages)
 
         self.scroll = QScrollArea(self)
         self.container = QWidget()
@@ -131,29 +117,132 @@ class MainWindow(QMainWindow):
         self.progressBar = QProgressBar(self)
         layout.addWidget(self.progressBar)
 
+        # Pagination controls
+        self.paginationLayout = QHBoxLayout()
+        self.prevButton = QPushButton("Previous")
+        self.prevButton.clicked.connect(self.prevPage)
+        self.paginationLayout.addWidget(self.prevButton)
+
+        self.pageLabel = QLabel()
+        self.paginationLayout.addWidget(self.pageLabel)
+
+        self.nextButton = QPushButton("Next")
+        self.nextButton.clicked.connect(self.nextPage)
+        self.paginationLayout.addWidget(self.nextButton)
+
+        layout.addLayout(self.paginationLayout)
+
         centralWidget = QWidget(self)
         centralWidget.setLayout(layout)
         self.setCentralWidget(centralWidget)
 
-        # Ensure self.unique_images contains tuples of (label, QImage)
-        self.loader_thread = ImageLoaderThread(self.unique_images, QtCore.QSize(75, 75))
-        self.loader_thread.update_pixmap.connect(self.addImageToGrid, QtCore.Qt.QueuedConnection)
-        self.loader_thread.progress_updated.connect(self.updateProgressBar)
-        self.loader_thread.start()
+        self.setPaginationControlsVisible(False)  # Hide pagination controls initially
+
+    def setPaginationControlsVisible(self, visible):
+        self.prevButton.setVisible(visible)
+        self.pageLabel.setVisible(visible)
+        self.nextButton.setVisible(visible)
+
+    def onViewClicked(self):
+        self.displayImages()
+
+    def openFileDialog(self):
+        fileName, _ = QFileDialog.getOpenFileName(self, "Open CSV file", "", "CSV Files (*.csv)")
+        if fileName:
+            self.csv_file = fileName
+            self.processWindow = ProcessingWindow(fileName, self)
+            self.processWindow.thread.dataLoaded.connect(self.storeImages)
+            self.processWindow.thread.errorOccurred.connect(self.handleError)
+            self.processWindow.show()
+
+    def storeImages(self, all_images, unique_images):
+        print("Storing images...")
+        # Convert image paths to QImage objects
+        self.images = [(label, QImage(image_path)) for label, image_path in all_images]
+        self.filtered_images = self.images  # Initialize filtered images to all images
+        self.labels = [img[0] for img in all_images]  # Extract labels
+        self.processWindow = None  # Clean up
+        self.current_page = 0  # Reset to the first page
+        self.updatePagination()
+        print(f"Stored {len(self.images)} images.")
+
+    def displayImages(self):
+        print("Displaying images...")
+        if not self.filtered_images:
+            QMessageBox.information(self, "Error", "No images to display.")
+            return
+
+        # Clear previous grid
+        for i in range(self.grid.count()):
+            widget = self.grid.itemAt(i).widget()
+            if widget:
+                widget.deleteLater()
+
+        start_index = self.current_page * self.images_per_page
+        end_index = min(start_index + self.images_per_page, len(self.filtered_images))
+        for index in range(start_index, end_index):
+            label, qimage = self.filtered_images[index]
+            if isinstance(qimage, QImage):
+                pixmap = QPixmap.fromImage(qimage)
+                pixmap = pixmap.scaled(100, 100, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                row, col = divmod(index - start_index, 6)
+                self.addImageToGrid(pixmap, row, col, label)
+            else:
+                print(f"Skipping non-QImage object at index {index}")
+
+        self.updatePagination()
+
+    def updatePagination(self):
+        total_pages = (len(self.filtered_images) + self.images_per_page - 1) // self.images_per_page
+        self.pageLabel.setText(f"Page {self.current_page + 1} of {total_pages}")
+        self.prevButton.setEnabled(self.current_page > 0)
+        self.nextButton.setEnabled(self.current_page < total_pages - 1)
+        self.setPaginationControlsVisible(total_pages > 1)  # Show pagination controls only if there are multiple pages
+
+    def filterImages(self, searchText):
+        searchText = searchText.lower()
+        print(f"Filtering images with search text: '{searchText}'")
+        if searchText == "":
+            self.filtered_images = self.images
+        elif searchText in self.search_cache:
+            self.filtered_images = self.search_cache[searchText]
+        else:
+            self.filtered_images = [(label, qimage) for label, qimage in self.images if searchText in label.lower()]
+            self.search_cache[searchText] = self.filtered_images
+        print(f"Filtered down to {len(self.filtered_images)} images.")
+        self.current_page = 0  # Reset to the first page
+        self.displayImages()
 
     def addImageToGrid(self, pixmap, row, col, label):
-        Qlabel = QLabel(label)
-        Qlabel.setPixmap(pixmap)
-        Qlabel.setAlignment(QtCore.Qt.AlignCenter)
-        Qlabel.mousePressEvent = lambda event, pix=pixmap: self.onImageClick(pix, label)
-        self.grid.addWidget(Qlabel, row, col)
+        label_widget = QLabel(label)
+        image_label = QLabel()
+        image_label.setPixmap(pixmap)
+        image_label.setAlignment(QtCore.Qt.AlignCenter)
+        image_label.mousePressEvent = lambda event, pix=pixmap, lbl=label: self.onImageClick(pix, lbl)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.addWidget(image_label)
+        layout.addWidget(label_widget)
+        layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        self.grid.addWidget(container, row, col)
+        print(f"Added image to grid at row {row}, col {col}.")
 
     def onImageClick(self, pixmap, label):
         self.imageWindow = ImageWindow(pixmap, label)
         self.imageWindow.show()
 
-    def updateProgressBar(self, value):
-        self.progressBar.setValue(value)
+    def prevPage(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.displayImages()
+
+    def nextPage(self):
+        total_pages = (len(self.filtered_images) + self.images_per_page - 1) // self.images_per_page
+        if self.current_page < total_pages - 1:
+            self.current_page += 1
+            self.displayImages()
 
     def handleError(self, error_message):
         QMessageBox.critical(self, "Error", error_message)
@@ -180,10 +269,11 @@ class MainWindow(QMainWindow):
             print("Camera window should be open now.")
 
 def main():
-    app = QApplication([])
+    import sys
+    app = QApplication(sys.argv)
     win = MainWindow()
     win.show()
-    app.exec_()
+    sys.exit(app.exec_())
 
 if __name__ == '__main__':
     main()

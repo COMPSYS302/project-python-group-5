@@ -1,22 +1,40 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.cuda.amp import GradScaler, autocast
 from PyQt5.QtCore import QThread, pyqtSignal
+from torch.utils.data import DataLoader, Dataset
+import torchvision.transforms as transforms
+
+
+class SubBatchDataset(Dataset):
+    def __init__(self, dataset, indices):
+        self.dataset = dataset
+        self.indices = indices
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        return self.dataset[self.indices[idx]]
+
 
 class TrainingThread(QThread):
     progress = pyqtSignal(int)
     epoch_progress = pyqtSignal(int, float, float)
+    preparing = pyqtSignal(int, int)
     finished = pyqtSignal()
     error_signal = pyqtSignal(str)
 
-    def __init__(self, model, train_loader, val_loader, epochs, batch_size, stop_event):
-        super().__init__()
+    def __init__(self, model, train_dataset, val_loader, epochs, original_batch_size, stop_event):
+        super(TrainingThread, self).__init__()
         self.model = model
-        self.train_loader = train_loader
+        self.train_dataset = train_dataset
         self.val_loader = val_loader
         self.epochs = epochs
-        self.batch_size = batch_size
+        self.original_batch_size = original_batch_size
         self.stop_event = stop_event
+        self.scaler = GradScaler()
 
     def run(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -24,39 +42,85 @@ class TrainingThread(QThread):
         optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         criterion = nn.CrossEntropyLoss()
 
+        # Adjust batch size to fit in GPU memory
+        max_sub_batch_size = self.find_max_sub_batch_size(device)
+        self.preparing.emit(100, max_sub_batch_size)
+
+        # Main training loop
         try:
-            total_steps = len(self.train_loader) * self.epochs
-            current_step = 0
             for epoch in range(self.epochs):
                 if self.stop_event.is_set():
                     break
+
                 running_loss = 0.0
                 correct = 0
                 total = 0
-                for images, labels in self.train_loader:
-                    images, labels = images.to(device), labels.to(device)
-                    optimizer.zero_grad()
-                    outputs = self.model(images)
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
 
-                    running_loss += loss.item()
-                    _, predicted = torch.max(outputs.data, 1)
-                    total += labels.size(0)
-                    correct += (predicted == labels).sum().item()
+                # Generate sub-batches
+                indices = list(range(len(self.train_dataset)))
+                sub_batches = [indices[i:i + max_sub_batch_size] for i in range(0, len(indices), max_sub_batch_size)]
 
-                    current_step += 1
-                    self.progress.emit(int((current_step / total_steps) * 100))
+                for batch_idx, sub_batch_indices in enumerate(sub_batches):
+                    sub_batch_dataset = SubBatchDataset(self.train_dataset, sub_batch_indices)
+                    sub_batch_loader = DataLoader(sub_batch_dataset, batch_size=max_sub_batch_size, shuffle=True)
 
-                epoch_loss = running_loss / len(self.train_loader)
-                epoch_accuracy = (correct / total) * 100
-                self.epoch_progress.emit(epoch + 1, epoch_loss, epoch_accuracy)
+                    for images, labels in sub_batch_loader:
+                        images, labels = images.to(device), labels.to(device)
+                        optimizer.zero_grad()
+
+                        with autocast():
+                            outputs = self.model(images)
+                            loss = criterion(outputs, labels)
+
+                        self.scaler.scale(loss).backward()
+                        self.scaler.step(optimizer)
+                        self.scaler.update()
+
+                        running_loss += loss.item() * images.size(0)
+                        _, predicted = torch.max(outputs.data, 1)
+                        total += labels.size(0)
+                        correct += (predicted == labels).sum().item()
+
+                        # Calculate progress
+                        current_step = epoch * len(self.train_dataset) + batch_idx * max_sub_batch_size
+                        total_steps = self.epochs * len(self.train_dataset)
+                        self.progress.emit(int((current_step / total_steps) * 100))
+
+                    epoch_loss = running_loss / total
+                    epoch_accuracy = (correct / total) * 100
+                    self.epoch_progress.emit(epoch + 1, epoch_loss, epoch_accuracy)
+
+                # Validation logic if needed here
 
             if not self.stop_event.is_set():
                 torch.save(self.model.state_dict(), 'trained_model.pth')
-                print("Model saved to trained_model.pth")
-            self.finished.emit()
+                self.finished.emit()
+
         except Exception as e:
             self.error_signal.emit(str(e))
             self.finished.emit()
+
+    def find_max_sub_batch_size(self, device):
+        for batch_size in range(self.original_batch_size, 0, -1):
+            if self.test_memory(batch_size, device):
+                return batch_size
+        return 1
+
+    def test_memory(self, batch_size, device):
+        try:
+            sub_batch_indices = list(range(0, min(batch_size, len(self.train_dataset))))
+            sub_batch_dataset = SubBatchDataset(self.train_dataset, sub_batch_indices)
+            sub_batch_loader = DataLoader(sub_batch_dataset, batch_size=batch_size, shuffle=False)
+
+            for images, labels in sub_batch_loader:
+                images, labels = images.to(device), labels.to(device)
+                with autocast():
+                    _ = self.model(images)  # Run a forward pass
+                break  # If this works without an error, the batch size is okay
+            return True
+        except RuntimeError as e:
+            if 'out of memory' in str(e):
+                torch.cuda.empty_cache()
+                return False
+            else:
+                raise e

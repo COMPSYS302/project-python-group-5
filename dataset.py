@@ -2,7 +2,6 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
 import numpy as np
-import io
 
 class SignLanguageDataset(Dataset):
     def __init__(self, images, labels, transform=None):

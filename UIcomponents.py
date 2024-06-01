@@ -14,7 +14,7 @@ class SearchBar(QWidget):
         self.layout.addWidget(self.searchBar)
 
         self.searchBar.textChanged.connect(
-            self.textChanged.emit)  # Connect the QLineEdit text change to emit the signal
+            self.textChanged.emit)
 
         self.imageArea = ImageArea()
         self.layout.addWidget(self.imageArea)
