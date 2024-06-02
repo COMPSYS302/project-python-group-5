@@ -4,7 +4,6 @@ import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 from PyQt5.QtCore import QThread, pyqtSignal
 from torch.utils.data import DataLoader, Dataset
-import torchvision.transforms as transforms
 
 
 class CustomLabelEncoder:
@@ -52,7 +51,7 @@ class TrainingThread(QThread):
     def run(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
-        optimizer = optim.Adam(self.model.parameters(), lr=0.0001)  # Lower learning rate
+        optimizer = optim.Adam(self.model.parameters(), lr=0.0001)
         criterion = nn.CrossEntropyLoss()
 
         # Adjust batch size to fit in GPU memory

@@ -1,7 +1,6 @@
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
-import numpy as np
 import torch
 
 class SignLanguageDataset(Dataset):

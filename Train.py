@@ -7,7 +7,6 @@ import pyqtgraph as pg
 from models import ModifiedAlexNet, ModifiedResNet, CustomCNN
 from dataset import SignLanguageDataset
 from training_thread import TrainingThread
-from batch_preparation_window import BatchPreparationWindow
 from threading import Event
 import time
 import torch
@@ -115,15 +114,19 @@ class Train(QWidget):
 
         original_batch_size = int((self.batchSizeSlider.value() / 100) * len(dataset))
 
-        self.batch_preparation_window = BatchPreparationWindow()
-        self.batch_preparation_window.show()
-
         epochs = self.epochsSlider.value()
-        model = {'Modified AlexNet': ModifiedAlexNet, 'Modified ResNet': ModifiedResNet, 'Custom CNN': CustomCNN}[model_name]()
+
+        model_dict = {
+            'Modified AlexNet': ModifiedAlexNet,
+            'Modified ResNet': ModifiedResNet,
+            'Custom CNN': CustomCNN
+        }
+        model = model_dict[model_name]()  # Instantiate the selected model
 
         val_loader = DataLoader(val_dataset, batch_size=original_batch_size, shuffle=False)
 
-        self.train_thread = TrainingThread(model, train_dataset, val_loader, epochs, original_batch_size, self.stop_event)
+        self.train_thread = TrainingThread(model, train_dataset, val_loader, epochs, original_batch_size,
+                                           self.stop_event)
         self.train_thread.progress.connect(self.updateProgress)
         self.train_thread.epoch_progress.connect(self.updateEpochProgress)
         self.train_thread.preparing.connect(self.updatePreparationProgress)
@@ -139,18 +142,12 @@ class Train(QWidget):
         self.progressBar.setValue(percentage)
 
     def updateEpochProgress(self, epoch, loss, acc):
-        # self.lossCurve.setData(range(epoch), [loss] * epoch)
-        # self.accCurve.setData(range(epoch), [acc] * epoch)
-        # self.statusLabel.setText(f"Epoch: {epoch}, Loss: {loss:.4f}, Acc: {acc:.2f}%")
-
         self.epoch_losses.append(loss)
         self.epoch_accuracies.append(acc)
 
-        # Update plot data
         self.lossCurve.setData(list(range(epoch)), self.epoch_losses)
         self.accCurve.setData(list(range(epoch)), self.epoch_accuracies)
 
-        # Update status label
         self.statusLabel.setText(f"Epoch: {epoch}, Loss: {loss:.4f}, Acc: {acc:.2f}%")
 
     def updatePreparationProgress(self, progress, num_batches):

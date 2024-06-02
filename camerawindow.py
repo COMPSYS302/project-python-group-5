@@ -81,7 +81,7 @@ class CameraWindow(QWidget):
         self.model_files = self.getModelFiles()
         self.model = None
         self.initUI()
-        self.model = self.modelComboBox.currentText()
+        self.loadSelectedModel()
 
         if self.model is not None:
             # Initialize MediaPipe Hands
@@ -99,6 +99,7 @@ class CameraWindow(QWidget):
 
         self.modelComboBox = QComboBox(self)
         self.modelComboBox.addItems([self.formatModelName(f) for f in self.model_files])
+        self.modelComboBox.currentIndexChanged.connect(self.loadSelectedModel)  # Connect the model selection change event
         layout.addWidget(self.modelComboBox)
 
         self.cameraLabel = QLabel(self)
@@ -110,23 +111,32 @@ class CameraWindow(QWidget):
 
         self.setLayout(layout)
 
-    def load_model(self):
+    def load_model(self, model_path):
         try:
             model = ModifiedAlexNet(num_classes=36)  # Adjust num_classes as needed
-            model.load_state_dict(torch.load(r'C:\project-python-group-5\trained_model.pth'))
+            model.load_state_dict(torch.load(model_path))
             model.to(self.device)
             model.eval()  # Set the model to evaluation mode
             return model
         except FileNotFoundError:
             QMessageBox.critical(self, "Error", "No Trained Model Available")
             return None
+
     def getModelFiles(self):
-        modeldirectory = '/Users/tony/Documents/COMPSYS 305/project-python-group-5'
+        # Get the directory of the current script
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        # modeldirectory = os.path.join(current_dir, 'project-python-group-5')
         try:
-            return [f for f in os.listdir(modeldirectory) if f.endswith('.pth')]
+            return [f for f in os.listdir(current_dir) if f.endswith('.pth')]
         except FileNotFoundError:
             QMessageBox.critical(self, "Error", "No Trained Model Available")
-            return None
+            return []
+
+    def loadSelectedModel(self):
+        model_name = self.modelComboBox.currentText().replace(' ', '_') + '.pth'
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(current_dir, 'project-python-group-5', model_name)
+        self.model = self.load_model(model_path)
 
     def updateFrame(self, frame):
         try:
@@ -146,9 +156,10 @@ class CameraWindow(QWidget):
 
     def processFrame(self, frame):
         try:
-            self.predictionThread = PredictionThread(self.model, frame, self.device)
-            self.predictionThread.predictionMade.connect(self.updatePrediction)
-            self.predictionThread.start()
+            if self.model is not None:
+                self.predictionThread = PredictionThread(self.model, frame, self.device)
+                self.predictionThread.predictionMade.connect(self.updatePrediction)
+                self.predictionThread.start()
         except Exception as e:
             print(f"Error in processFrame: {e}")
 
