@@ -52,7 +52,7 @@ class TrainingThread(QThread):
     def run(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(device)
-        optimizer = optim.Adam(self.model.parameters(), lr=0.001)
+        optimizer = optim.Adam(self.model.parameters(), lr=0.0001)  # Lower learning rate
         criterion = nn.CrossEntropyLoss()
 
         # Adjust batch size to fit in GPU memory
@@ -86,29 +86,27 @@ class TrainingThread(QThread):
                             labels = torch.tensor(self.label_encoder.transform(labels) if isinstance(labels, str) else labels).to(device)
                         optimizer.zero_grad()
 
-                        with autocast():
-                            outputs = self.model(images)
-                            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                                raise ValueError("NaN or Inf in outputs")
-                            loss = criterion(outputs, labels)
-                            if torch.isnan(loss).any() or torch.isinf(loss).any():
-                                raise ValueError("NaN or Inf in loss")
+                        try:
+                            with autocast():
+                                outputs = self.model(images)
+                                loss = criterion(outputs, labels)
+                            self.scaler.scale(loss).backward()
 
-                        self.scaler.scale(loss).backward()
+                            # Clip gradients to prevent exploding gradients
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
-                        # Check for NaNs in gradients
-                        for param in self.model.parameters():
-                            if param.grad is not None and (
-                                    torch.isnan(param.grad).any() or torch.isinf(param.grad).any()):
-                                raise ValueError("NaN or Inf in gradients")
+                            self.scaler.step(optimizer)
+                            self.scaler.update()
 
-                        self.scaler.step(optimizer)
-                        self.scaler.update()
-
-                        running_loss += loss.item() * images.size(0)
-                        _, predicted = torch.max(outputs.data, 1)
-                        total += labels.size(0)
-                        correct += (predicted == labels).sum().item()
+                            running_loss += loss.item() * images.size(0)
+                            _, predicted = torch.max(outputs.data, 1)
+                            total += labels.size(0)
+                            correct += (predicted == labels).sum().item()
+                        except (ValueError, RuntimeError) as e:
+                            # Handle NaN or Inf in outputs, loss, or gradients
+                            self.error_signal.emit(f"NaN or Inf encountered: {str(e)}")
+                            optimizer.zero_grad()
+                            continue
 
                         # Calculate progress
                         current_step = epoch * len(self.train_dataset) + batch_idx * max_sub_batch_size
