@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 import warnings
 import numpy as np
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox, QComboBox
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox, QComboBox, QPushButton
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
 
@@ -83,14 +83,13 @@ class CameraWindow(QWidget):
         self.initUI()
         self.loadSelectedModel()
 
-        if self.model is not None:
-            # Initialize MediaPipe Hands
-            self.mp_hands = mp.solutions.hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-            self.mp_drawing = mp.solutions.drawing_utils
+        # Initialize MediaPipe Hands
+        self.mp_hands = mp.solutions.hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+        self.mp_drawing = mp.solutions.drawing_utils
 
-            self.cameraThread = CameraThread()
-            self.cameraThread.frameCaptured.connect(self.updateFrame)
-            self.cameraThread.start()
+        self.cameraThread = CameraThread()
+        self.cameraThread.frameCaptured.connect(self.updateFrame)
+        self.cameraThread.start()
 
     def initUI(self):
         self.setWindowTitle("Camera Window")
@@ -108,6 +107,14 @@ class CameraWindow(QWidget):
 
         self.predictionLabel = QLabel("Prediction: ", self)
         layout.addWidget(self.predictionLabel)
+
+        self.startCaptureButton = QPushButton("Start Capture", self)
+        self.startCaptureButton.clicked.connect(self.startCapture)
+        layout.addWidget(self.startCaptureButton)
+
+        self.takePictureButton = QPushButton("Take Picture", self)
+        self.takePictureButton.clicked.connect(self.takePicture)
+        layout.addWidget(self.takePictureButton)
 
         self.setLayout(layout)
 
@@ -146,13 +153,33 @@ class CameraWindow(QWidget):
             bytesPerLine = ch * w
             qImg = QImage(image.data, w, h, bytesPerLine, QImage.Format_RGB888)
             self.cameraLabel.setPixmap(QPixmap.fromImage(qImg))
-            self.processFrame(frame)  # Process the frame for prediction
         except Exception as e:
             print(f"Error in updateFrame: {e}")
 
     def formatModelName(self, filename):
         # Remove the file extension and replace underscores with spaces
         return filename.replace('_', ' ').replace('.pth', '').title()
+
+    def startCapture(self):
+        if self.model is not None:
+            self.captureTimer = QTimer(self)
+            self.captureTimer.timeout.connect(self.captureFrame)
+            self.captureTimer.start(100)  # Capture every 100ms
+        else:
+            QMessageBox.warning(self, "Warning", "No model selected/trained")
+
+    def captureFrame(self):
+        ret, frame = self.cameraThread.capture.read()
+        if ret:
+            self.processFrame(frame)
+
+    def takePicture(self):
+        if self.model is not None:
+            ret, frame = self.cameraThread.capture.read()
+            if ret:
+                self.processFrame(frame)
+        else:
+            QMessageBox.warning(self, "Warning", "No model selected/trained")
 
     def processFrame(self, frame):
         try:
