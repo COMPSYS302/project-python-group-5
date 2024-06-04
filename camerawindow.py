@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 import warnings
 import numpy as np
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox, QComboBox, QPushButton
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox, QComboBox, QPushButton, QMainWindow
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
 
@@ -74,14 +74,13 @@ class PredictionThread(QThread):
             return asl_classes[idx]
         return "Unknown"
 
-class CameraWindow(QWidget):
+class CameraWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_files = self.getModelFiles()
         self.model = None
         self.initUI()
-        self.loadSelectedModel()
 
         # Initialize MediaPipe Hands
         self.mp_hands = mp.solutions.hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
@@ -94,29 +93,38 @@ class CameraWindow(QWidget):
     def initUI(self):
         self.setWindowTitle("Camera Window")
         self.setGeometry(200, 200, 800, 600)
-        layout = QVBoxLayout(self)
 
-        self.modelComboBox = QComboBox(self)
+        # Central widget
+        centralWidget = QWidget(self)
+        self.setCentralWidget(centralWidget)
+
+        # Layout for central widget
+        layout = QVBoxLayout(centralWidget)
+
+        # Model selection combo box
+        self.modelComboBox = QComboBox()
         self.modelComboBox.addItems([self.formatModelName(f) for f in self.model_files])
-        self.modelComboBox.currentIndexChanged.connect(self.loadSelectedModel)  # Connect the model selection change event
+        self.modelComboBox.currentIndexChanged.connect(self.loadSelectedModel)
         layout.addWidget(self.modelComboBox)
 
-        self.cameraLabel = QLabel(self)
+        # Label to show the camera feed
+        self.cameraLabel = QLabel()
         self.cameraLabel.setFixedSize(640, 480)
         layout.addWidget(self.cameraLabel)
 
-        self.predictionLabel = QLabel("Prediction: ", self)
+        # Prediction label
+        self.predictionLabel = QLabel("Prediction: ")
         layout.addWidget(self.predictionLabel)
 
-        self.startCaptureButton = QPushButton("Start Capture", self)
+        # Start capture button
+        self.startCaptureButton = QPushButton("Start Capture")
         self.startCaptureButton.clicked.connect(self.startCapture)
         layout.addWidget(self.startCaptureButton)
 
-        self.takePictureButton = QPushButton("Take Picture", self)
+        # Take picture button
+        self.takePictureButton = QPushButton("Take Picture")
         self.takePictureButton.clicked.connect(self.takePicture)
         layout.addWidget(self.takePictureButton)
-
-        self.setLayout(layout)
 
     def load_model(self, model_path):
         try:
