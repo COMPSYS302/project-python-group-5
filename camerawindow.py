@@ -81,6 +81,7 @@ class CameraWindow(QMainWindow):
         self.model_files = self.getModelFiles()
         self.model = None
         self.initUI()
+        self.loadSelectedModel()
 
         # Initialize MediaPipe Hands
         self.mp_hands = mp.solutions.hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
@@ -129,7 +130,10 @@ class CameraWindow(QMainWindow):
     def load_model(self, model_path):
         try:
             model = ModifiedAlexNet(num_classes=36)  # Adjust num_classes as needed
-            model.load_state_dict(torch.load(model_path))
+            if self.device is 'cuda':
+                model.load_state_dict(torch.load(model_path))
+            else:
+                model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
             model.to(self.device)
             model.eval()  # Set the model to evaluation mode
             return model
@@ -140,7 +144,6 @@ class CameraWindow(QMainWindow):
     def getModelFiles(self):
         # Get the directory of the current script
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # modeldirectory = os.path.join(current_dir, 'project-python-group-5')
         try:
             return [f for f in os.listdir(current_dir) if f.endswith('.pth')]
         except FileNotFoundError:
@@ -148,10 +151,15 @@ class CameraWindow(QMainWindow):
             return []
 
     def loadSelectedModel(self):
-        model_name = self.modelComboBox.currentText().replace(' ', '_') + '.pth'
+        model_name = self.modelComboBox.currentText().replace(' ', '_').lower() + '.pth'
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        model_path = os.path.join(current_dir, 'project-python-group-5', model_name)
+        model_path = os.path.join(current_dir, model_name)
         self.model = self.load_model(model_path)
+        if not os.path.exists(model_path):
+            QMessageBox.critical(self, "Error", "Model file does not exist: " + model_path)
+            return
+        self.model = self.load_model(model_path)
+        print("model is:" + model_path)
 
     def updateFrame(self, frame):
         try:
