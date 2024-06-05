@@ -22,6 +22,9 @@ class ProcessingThread(QThread):
             unique_images = []
             unique_pixel_data = set()
 
+            # Mapping for incorrect number labels
+            number_mapping = {0: 9, 1: 0, 2: 7, 3: 6, 4: 1, 5: 8, 6: 4, 7: 3, 8: 2, 9: 5}
+
             with open(self.filePath, 'r', newline='') as csvfile:
                 reader = csv.reader(csvfile)
                 rows = list(reader)
@@ -41,7 +44,9 @@ class ProcessingThread(QThread):
                     if 0 <= label_number <= 25:
                         label = chr(label_number + 65)  # Convert to 'A'-'Z'
                     elif 26 <= label_number <= 35:
-                        label = chr(label_number + 22)  # Convert to '0'-'9'
+                        corrected_number = label_number - 26  # Normalize to 0-9 range
+                        corrected_label = number_mapping[corrected_number]
+                        label = chr(corrected_label + 48)  # Convert corrected number to '0'-'9'
                     else:
                         raise ValueError("Label number out of range (0-35).")
 
