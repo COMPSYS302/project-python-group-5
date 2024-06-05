@@ -5,8 +5,10 @@ import torch
 import torchvision.transforms as transforms
 import warnings
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox, QComboBox, QPushButton, QMainWindow
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QApplication, QMessageBox, QComboBox, QPushButton
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
 
@@ -29,14 +31,14 @@ class CameraThread(QThread):
             ret, frame = self.capture.read()
             if ret:
                 self.frameCaptured.emit(frame)
-            QThread.msleep(500)  # Capture frame every 100ms for stability
+            QThread.msleep(500)
 
     def stop(self):
         self.running = False
         self.capture.release()
 
 class PredictionThread(QThread):
-    predictionMade = pyqtSignal(str)
+    predictionMade = pyqtSignal(dict)
 
     def __init__(self, model, frame, device, parent=None):
         super().__init__(parent)
@@ -48,31 +50,24 @@ class PredictionThread(QThread):
         try:
             transform = transforms.Compose([
                 transforms.ToPILImage(),
-                transforms.Grayscale(num_output_channels=3),  # Convert image to grayscale with 3 channels
+                transforms.Grayscale(num_output_channels=3),
                 transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Normalize((0.5,), (0.5,))
             ])
 
             image = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
-            image = transform(image).unsqueeze(0).to(self.device)  # Move to the same device as the model
+            image = transform(image).unsqueeze(0).to(self.device)
 
             with torch.no_grad():
                 self.model.eval()
                 outputs = self.model(image)
-                _, predicted = torch.max(outputs, 1)
-                prediction = self.idx_to_class(predicted.item())
+                probabilities = torch.nn.functional.softmax(outputs, dim=1)
+                prediction_scores = {chr(65+i): prob for i, prob in enumerate(probabilities.squeeze().tolist())}
 
-            self.predictionMade.emit(prediction)
+            self.predictionMade.emit(prediction_scores)
         except Exception as e:
             print(f"Error in PredictionThread: {e}")
-
-    def idx_to_class(self, idx):
-        # Map the predicted index to the corresponding ASL character
-        asl_classes = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        if 0 <= idx < len(asl_classes):
-            return asl_classes[idx]
-        return "Unknown"
 
 class CameraWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -93,7 +88,7 @@ class CameraWindow(QMainWindow):
 
     def initUI(self):
         self.setWindowTitle("Camera Window")
-        self.setGeometry(200, 200, 800, 600)
+        self.setGeometry(200, 200, 1200, 600)
 
         # Central widget
         centralWidget = QWidget(self)
@@ -127,10 +122,15 @@ class CameraWindow(QMainWindow):
         self.takePictureButton.clicked.connect(self.takePicture)
         layout.addWidget(self.takePictureButton)
 
+        # Matplotlib Figure
+        self.figure = plt.figure()
+        self.canvas = FigureCanvas(self.figure)
+        layout.addWidget(self.canvas)
+
     def load_model(self, model_path):
         try:
             model = ModifiedAlexNet(num_classes=36)  # Adjust num_classes as needed
-            if self.device is 'cuda':
+            if self.device == 'cuda':
                 model.load_state_dict(torch.load(model_path))
             else:
                 model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
@@ -142,7 +142,6 @@ class CameraWindow(QMainWindow):
             return None
 
     def getModelFiles(self):
-        # Get the directory of the current script
         current_dir = os.path.dirname(os.path.abspath(__file__))
         try:
             return [f for f in os.listdir(current_dir) if f.endswith('.pth')]
@@ -159,7 +158,7 @@ class CameraWindow(QMainWindow):
             QMessageBox.critical(self, "Error", "Model file does not exist: " + model_path)
             return
         self.model = self.load_model(model_path)
-        print("model is:" + model_path)
+        print("Model loaded: " + model_path)
 
     def updateFrame(self, frame):
         try:
@@ -173,7 +172,6 @@ class CameraWindow(QMainWindow):
             print(f"Error in updateFrame: {e}")
 
     def formatModelName(self, filename):
-        # Remove the file extension and replace underscores with spaces
         return filename.replace('_', ' ').replace('.pth', '').title()
 
     def startCapture(self):
@@ -198,36 +196,40 @@ class CameraWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "No model selected/trained")
 
     def processFrame(self, frame):
-        try:
-            if self.model is not None:
-                self.predictionThread = PredictionThread(self.model, frame, self.device)
-                self.predictionThread.predictionMade.connect(self.updatePrediction)
-                self.predictionThread.start()
-        except Exception as e:
-            print(f"Error in processFrame: {e}")
+        if self.model is not None:
+            self.predictionThread = PredictionThread(self.model, frame, self.device)
+            self.predictionThread.predictionMade.connect(self.updatePrediction)
+            self.predictionThread.start()
 
-    def updatePrediction(self, prediction):
+    def updatePrediction(self, prediction_scores):
         try:
-            self.predictionLabel.setText(f"Prediction: {prediction}")
+            self.predictionLabel.setText("Prediction: " + max(prediction_scores, key=prediction_scores.get))
+            self.updateGraph(prediction_scores)
         except Exception as e:
             print(f"Error in updatePrediction: {e}")
 
+    def updateGraph(self, prediction_scores):
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        characters = prediction_scores.keys()
+        scores = prediction_scores.values()
+        ax.bar(characters, scores, color='blue')
+        ax.set_ylim(0, 1)
+        ax.set_ylabel('Confidence')
+        ax.set_title('Prediction Confidence')
+        self.canvas.draw()
+
     def detectAndDrawHands(self, frame):
-        try:
-            # Convert the BGR image to RGB
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.mp_hands.process(rgb_frame)
-            if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
-                    self.mp_drawing.draw_landmarks(frame, hand_landmarks, mp.solutions.hands.HAND_CONNECTIONS)
-            return frame
-        except Exception as e:
-            print(f"Error in detectAndDrawHands: {e}")
-            return frame
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.mp_hands.process(rgb_frame)
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                self.mp_drawing.draw_landmarks(frame, hand_landmarks, mp.solutions.hands.HAND_CONNECTIONS)
+        return frame
 
     def closeEvent(self, event):
         self.cameraThread.stop()
-        self.mp_hands.close()  # Close MediaPipe Hands
+        self.mp_hands.close()
         event.accept()
 
 if __name__ == '__main__':
